@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Outbreak Watch{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">OW</span><span>OUTBREAK <b>WATCH</b><small>Public health intelligence · source-first news</small></span></a>
+  <nav><a class="{{ 'selected' if active == 'latest' else '' }}" href="/">Latest news</a><a class="{{ 'selected' if active == 'archive' else '' }}" href="/archive">Archive</a></nav>
+</header>
+<main>
+  <section class="hero">
+    <div class="eyebrow">OUTBREAK INVESTIGATION MONITOR</div>
+    <h1>{% block heading %}A clearer view of emerging health events.{% endblock %}</h1>
+    <p>Curated outbreak reporting from trusted public-health sources, organized for fast review. Always follow the original source for authoritative updates.</p>
+  </section>
+  <div class="notice"><span class="notice-dot"></span> AI-assisted classification and summaries may contain errors. This site is an information index, not an official alerting system.</div>
+  {% block content %}{% endblock %}
+</main>
+<footer><span>OUTBREAK WATCH</span><span>Original publishers retain ownership of their content. Source links are preserved.</span></footer>
+</body>
+</html>

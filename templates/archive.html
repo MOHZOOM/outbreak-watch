@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Archive · Outbreak Watch{% endblock %}
+{% block heading %}Explore the archive{% endblock %}
+{% block content %}
+<form class="filters" action="/archive" method="get">
+  <input name="q" value="{{ request.args.get('q','') }}" placeholder="Search archived reports…">
+  <input name="country" value="{{ request.args.get('country','') }}" placeholder="Country or region">
+  <input name="disease" value="{{ request.args.get('disease','') }}" placeholder="Disease / event">
+  <select name="category"><option value="">All categories</option>{% for c in ['Outbreak investigation','Emerging public health threat','Official public health update','Research / surveillance'] %}<option value="{{ c }}" {{ 'selected' if request.args.get('category') == c else '' }}>{{ c }}</option>{% endfor %}</select>
+  <button type="submit">Search archive</button>
+</form>
+<div class="section-head"><div><div class="eyebrow">HISTORICAL RECORDS</div><h2>Previously collected reports</h2></div><span class="count">{{ articles|length }} records</span></div>
+{% if articles %}
+<div class="table-wrap"><table><thead><tr><th>Published</th><th>Headline / source</th><th>Event</th><th>Location</th><th>Category</th><th>Original</th></tr></thead><tbody>
+{% for a in articles %}<tr><td>{{ a['published_at'] or 'Unknown' }}</td><td><strong>{{ a['title'] }}</strong><small>{{ a['source_name'] }}</small>{% if a['ai_summary'] %}<p>{{ a['ai_summary']|truncate(150) }}</p>{% endif %}</td><td>{{ a['disease_event'] }}</td><td>{{ a['country_region'] }}</td><td><span class="tag">{{ a['category'] }}</span></td><td><a href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">Open ↗</a></td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}<div class="empty"><h3>The archive is ready for records</h3><p>As feeds are collected, relevant reports will be stored here and searchable.</p></div>{% endif %}
+{% endblock %}

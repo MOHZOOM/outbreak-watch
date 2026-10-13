@@ -1,0 +1,15 @@
+[
+  {
+    "name": "WHO Disease Outbreak News",
+    "url": "https://cms.who.int/api/news/diseaseoutbreaknews",
+    "type": "who_api",
+    "enabled": true
+  },
+  {
+    "name": "WHO AFRO Emergencies and Outbreaks",
+    "url": "https://www.afro.who.int/rss-feeds",
+    "type": "rss",
+    "enabled": false,
+    "note": "This is the official feed directory page; replace with the exact feed URL after verifying it."
+  }
+]

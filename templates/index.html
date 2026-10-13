@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Latest News · Outbreak Watch{% endblock %}
+{% block heading %}Latest outbreak news{% endblock %}
+{% block content %}
+<form class="filters" action="/" method="get">
+  <input name="q" value="{{ request.args.get('q','') }}" placeholder="Search headlines, sources, summaries…">
+  <input name="country" value="{{ request.args.get('country','') }}" placeholder="Country or region">
+  <input name="disease" value="{{ request.args.get('disease','') }}" placeholder="Disease / event">
+  <select name="category"><option value="">All categories</option>{% for c in ['Outbreak investigation','Emerging public health threat','Official public health update','Research / surveillance'] %}<option value="{{ c }}" {{ 'selected' if request.args.get('category') == c else '' }}>{{ c }}</option>{% endfor %}</select>
+  <button type="submit">Filter news</button>
+</form>
+<div class="section-head"><div><div class="eyebrow">LATEST COLLECTION</div><h2>Recent reports</h2></div><span class="count">{{ articles|length }} records</span></div>
+{% if articles %}
+<div class="news-list">
+{% for a in articles %}
+<article class="news-card">
+  <div class="card-top"><span class="tag">{{ a['category'] }}</span><span class="date">{{ a['published_at'] or 'Date not supplied' }}</span></div>
+  <h3><a href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">{{ a['title'] }}</a></h3>
+  <div class="metadata"><span><b>Event</b> {{ a['disease_event'] }}</span><span><b>Location</b> {{ a['country_region'] }}</span><span><b>Status</b> {{ a['outbreak_status'] }}</span></div>
+  {% if a['ai_summary'] %}<p class="summary">{{ a['ai_summary'] }}</p>{% elif a['description'] %}<p class="summary">{{ a['description']|striptags|truncate(260) }}</p>{% endif %}
+  <div class="source-row"><span>Source: <b>{{ a['source_name'] }}</b></span><a href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">Read original report ↗</a></div>
+</article>
+{% endfor %}
+</div>
+{% else %}
+<div class="empty"><div class="empty-icon">↗</div><h3>No collected reports yet</h3><p>Configure and enable approved feeds in <code>sources.json</code>, then run <code>python collector.py</code>.</p><p class="muted">This starter does not invent sample outbreak reports.</p></div>
+{% endif %}
+{% endblock %}
