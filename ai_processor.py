@@ -57,7 +57,7 @@ def heuristic_classification(title: str, description: str = "") -> dict:
         "country_region": country_region[:160],
         "event_date": "Unknown",
         "outbreak_status": "Unknown",
-        "summary": ""
+        "summary": "",
         "_ai_processed": False
     }
 
