@@ -58,6 +58,7 @@ def heuristic_classification(title: str, description: str = "") -> dict:
         "event_date": "Unknown",
         "outbreak_status": "Unknown",
         "summary": ""
+        "_ai_processed": False
     }
 
 
@@ -103,7 +104,11 @@ Feed description: {description[:5000]}
             "event_date": str(result.get("event_date", "Unknown"))[:80],
             "outbreak_status": str(result.get("outbreak_status", "Unknown"))[:120],
             "summary": str(result.get("summary", ""))[:600]
+            "_ai_processed": True
         }
-    except Exception:
-        # Fail closed: keep the source record, use heuristics, and log the failure upstream.
+        except Exception as exc:
+        print(
+            f"[WARN] OpenAI classification failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
         return heuristic_classification(title, description)
