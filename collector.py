@@ -28,30 +28,89 @@ def init_db():
 def load_sources():
     return json.loads((BASE_DIR / "sources.json").read_text(encoding="utf-8"))
 
+
 def extract_who_api(url):
-    """Use WHO's documented Disease Outbreak News JSON endpoint."""
-    response = requests.get(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, timeout=25)
+    """Use WHO's Disease Outbreak News JSON endpoint."""
+    response = requests.get(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json"
+        },
+        timeout=25
+    )
     response.raise_for_status()
     payload = response.json()
+
     if isinstance(payload, dict):
-        payload = payload.get("Items", payload.get("items", payload.get("value", [])))
+        payload = payload.get(
+            "Items",
+            payload.get("items", payload.get("value", []))
+        )
+
     if not isinstance(payload, list):
         raise ValueError("WHO API response was not a list of records")
+
     results = []
+
     for item in payload:
-        title = (item.get("OverrideTitle") if item.get("UseOverrideTitle") else None) or item.get("Title") or "Untitled WHO report"
+        title = (
+            item.get("OverrideTitle")
+            if item.get("UseOverrideTitle")
+            else None
+        ) or item.get("Title") or "Untitled WHO report"
+
         link = item.get("ItemDefaultUrl") or ""
+        slug = item.get("UrlName") or ""
+
         if link and not link.startswith("http"):
             link = urljoin("https://www.who.int/", link.lstrip("/"))
-        if not link:
-            slug = item.get("UrlName")
-            if slug:
-                link = f"https://www.who.int/emergencies/disease-outbreak-news/item/{slug}"
-        published = item.get("PublicationDateAndTime") or item.get("PublicationDate") or item.get("DateCreated") or ""
-        description = " ".join(str(item.get(k) or "") for k in ("Summary", "Overview", "Epidemiology", "Assessment") if item.get(k))
+
+        # Repair WHO DON links that contain only a report code.
         if link:
-            results.append({"title": str(title).strip(), "link": link, "description": description.strip(), "published": str(published)})
+            parts = urlsplit(link)
+            final_segment = parts.path.strip("/").split("/")[-1]
+
+            if (
+                parts.netloc.lower() in {"who.int", "www.who.int"}
+                and final_segment
+                and "-DON" in final_segment
+                and "/" not in parts.path.strip("/")
+            ):
+                link = (
+                    "https://www.who.int/emergencies/"
+                    "disease-outbreak-news/item/"
+                    f"{final_segment}"
+                )
+        elif slug:
+            link = (
+                "https://www.who.int/emergencies/"
+                f"disease-outbreak-news/item/{slug.strip('/')}"
+            )
+
+        published = (
+            item.get("PublicationDateAndTime")
+            or item.get("PublicationDate")
+            or item.get("DateCreated")
+            or ""
+        )
+
+        description = " ".join(
+            str(item.get(k) or "")
+            for k in ("Summary", "Overview", "Epidemiology", "Assessment")
+            if item.get(k)
+        )
+
+        if link:
+            results.append({
+                "title": str(title).strip(),
+                "link": link,
+                "description": description.strip(),
+                "published": str(published)
+            })
+
     return results
+
 
 def collect_once():
     init_db()
