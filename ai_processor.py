@@ -106,9 +106,12 @@ Feed description: {description[:5000]}
             "summary": str(result.get("summary", ""))[:600],
             "_ai_processed": True
         }
+    
     except Exception as exc:
-        print(
-            f"[WARN] OpenAI classification failed: "
-            f"{type(exc).__name__}: {exc}"
+        import logging
+        logging.getLogger(__name__).exception(
+            "OpenAI classification failed; using heuristic fallback (%s)",
+            type(exc).__name__
         )
         return heuristic_classification(title, description)
+
