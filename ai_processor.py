@@ -106,7 +106,7 @@ Feed description: {description[:5000]}
             "summary": str(result.get("summary", ""))[:600]
             "_ai_processed": True
         }
-        except Exception as exc:
+    except Exception as exc:
         print(
             f"[WARN] OpenAI classification failed: "
             f"{type(exc).__name__}: {exc}"
