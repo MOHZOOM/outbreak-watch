@@ -5,11 +5,12 @@
     "type": "who_api",
     "enabled": true
   },
+  
   {
     "name": "WHO AFRO Emergencies and Outbreaks",
-    "url": "https://www.afro.who.int/rss-feeds",
-    "type": "rss",
-    "enabled": false,
-    "note": "This is the official feed directory page; replace with the exact feed URL after verifying it."
+    "url": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
+    "type": "web_scrape",
+    "enabled": true
   }
+
 ]
