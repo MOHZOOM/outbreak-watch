@@ -103,7 +103,7 @@ Feed description: {description[:5000]}
             "country_region": str(result.get("country_region", "Unknown"))[:160],
             "event_date": str(result.get("event_date", "Unknown"))[:80],
             "outbreak_status": str(result.get("outbreak_status", "Unknown"))[:120],
-            "summary": str(result.get("summary", ""))[:600]
+            "summary": str(result.get("summary", ""))[:600],
             "_ai_processed": True
         }
     except Exception as exc:
