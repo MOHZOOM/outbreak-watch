@@ -7,22 +7,60 @@ OUTBREAK_CATEGORIES = [
     "Official public health update", "Research / surveillance", "Not relevant"
 ]
 
+
 def heuristic_classification(title: str, description: str = "") -> dict:
+    """Extract obvious outbreak metadata without an AI API call."""
+    import re
+
     text = f"{title} {description}".lower()
-    keywords = ("outbreak", "epidemic", "cluster", "cases", "avian influenza",
-                "mpox", "cholera", "measles", "dengue", "ebola", "marburg",
-                "polio", "plague", "novel coronavirus", "public health emergency")
-    relevant = any(k in text for k in keywords)
-    category = "Emerging public health threat" if relevant else "Not relevant"
+
+    keywords = (
+        "outbreak", "epidemic", "cluster", "cases", "avian influenza",
+        "mpox", "cholera", "measles", "dengue", "ebola", "marburg",
+        "polio", "plague", "novel coronavirus", "public health emergency",
+        "sudan virus disease", "meningitis", "yellow fever", "rabies"
+    )
+    relevant = any(word in text for word in keywords)
+
+    countries = {
+        "uganda", "cambodia", "nepal", "saudi arabia", "sudan",
+        "south sudan", "libya", "jordan", "tunisia", "egypt",
+        "nigeria", "kenya", "tanzania", "ethiopia", "rwanda",
+        "democratic republic of the congo", "congo", "ghana",
+        "cameroon", "senegal", "guinea", "liberia", "sierra leone",
+        "united states", "united kingdom", "france", "germany",
+        "italy", "spain", "china", "india", "indonesia", "thailand",
+        "vietnam", "pakistan", "afghanistan", "australia", "brazil",
+        "canada", "mexico", "japan", "south korea", "yemen",
+        "iraq", "iran", "lebanon", "turkey", "turkiye"
+    }
+
+    disease_event = title.strip() or "Unknown"
+    country_region = "Unknown"
+
+    # Recognize a country only when it appears after a title separator.
+    parts = re.split(r"\s+[–—-]\s+", title.strip())
+    if len(parts) >= 2:
+        possible_location = parts[-1].strip()
+        if possible_location.lower() in countries:
+            country_region = possible_location
+            disease_event = " - ".join(parts[:-1]).strip() or "Unknown"
+
+    category = (
+        "Emerging public health threat" if relevant else "Not relevant"
+    )
+
     return {
         "is_relevant": relevant,
         "category": category,
-        "disease_event": "Unknown",
-        "country_region": "Unknown",
+        "disease_event": disease_event[:160],
+        "country_region": country_region[:160],
         "event_date": "Unknown",
         "outbreak_status": "Unknown",
         "summary": ""
     }
+
+
 
 def classify_and_summarize(title: str, description: str, source_name: str, published_at: str) -> dict:
     """Return a conservative structured classification; fall back safely if AI is unavailable."""
