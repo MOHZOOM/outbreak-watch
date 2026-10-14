@@ -110,7 +110,7 @@ def collect_once():
                     title, link, source["name"], published, utc_now(), description[:10000],
                     int(fields["is_relevant"]), fields["category"], fields["disease_event"],
                     fields["country_region"], fields["event_date"], fields["outbreak_status"],
-                    fields["summary"], int(os.getenv("AI_ENABLED", "false").lower() == "true"),
+                    fields["summary"], int(fields.get("_ai_processed", False)),
                     duplicate_id
                 ))
                 if conn.total_changes:
