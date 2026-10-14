@@ -26,6 +26,7 @@ def collection_loop():
         try:
             with _collection_lock:
                 count = collect_once()
+                app.logger.info("Collector ran successfully; new records: %s", count)
                 app.logger.info("Scheduled collection completed: %s new records", count)
         except Exception:
             app.logger.exception("Scheduled collection failed")
