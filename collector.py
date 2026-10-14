@@ -383,19 +383,22 @@ def collect_once():
             published = entry.get("published", "")
             description = entry.get("description", "")
 
-            # For the WHO API and WHO Africa scraper, only insert
-            # reports with confirmed publication dates in the current year.
-            # Existing RSS sources retain their current behavior.
-            if source.get("type") in {"who_api", "web_scrape"}:
-                parsed_published = parse_date(published)
-                if not parsed_published:
-                    print(
-                        f"[INFO] Skipping undated report: {title}"
-                    )
+            
+           if source.get("type") in {"who_api", "web_scrape"}:
+              parsed_published = parse_date(published)
+
+              if not parsed_published:
+                 print(
+                  f"[WARN] Publication date could not be parsed: {title}"
+                   )
+
+        # Keep valid WHO API records even if the date format
+        # is unfamiliar. Do not invent a publication date.
+                 if source.get("type") == "web_scrape":
                     continue
-                if int(parsed_published[:4]) != CURRENT_YEAR:
-                    continue
-                published = parsed_published
+              else:
+                    published = parsed_published
+
 
             with sqlite3.connect(DB_PATH) as conn:
                 conn.row_factory = sqlite3.Row
