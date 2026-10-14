@@ -1,7 +1,6 @@
 
 import json
 import os
-import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -106,7 +105,7 @@ def extract_who_api(url):
         if link and not link.startswith("http"):
             link = urljoin("https://www.who.int/", link.lstrip("/"))
 
-        # Repair incomplete WHO Disease Outbreak News report-code links.
+        # Repair WHO report-code URLs when they contain only a report code.
         if link:
             parts = urlsplit(link)
             final_segment = parts.path.strip("/").split("/")[-1]
@@ -154,11 +153,12 @@ def extract_who_api(url):
                 "published": str(published)
             })
 
+    print(f"[INFO] WHO API returned {len(results)} candidate reports")
     return results
 
 
 def parse_date(value):
-    """Parse a date string into an ISO date, or return an empty string."""
+    """Parse a date string into ISO format, or return an empty string."""
     if not value:
         return ""
 
@@ -167,7 +167,7 @@ def parse_date(value):
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         return parsed.date().isoformat()
-    except ValueError:
+    except (ValueError, TypeError):
         pass
 
     for fmt in (
@@ -186,7 +186,7 @@ def parse_date(value):
 
 
 def extract_page_date(soup):
-    """Read common publication-date metadata from a report page."""
+    """Extract a publication date from common page metadata."""
     candidates = [
         ("meta", {"property": "article:published_time"}, "content"),
         ("meta", {"name": "date"}, "content"),
@@ -201,12 +201,12 @@ def extract_page_date(soup):
         element = soup.find(tag, attrs=attrs)
         if element:
             result = parse_date(
-                element.get(attr) or element.get_text(" ", strip=True)
+                element.get(attr)
+                or element.get_text(" ", strip=True)
             )
             if result:
                 return result
 
-    # Try visible dates in common page elements.
     for selector in (
         ".date",
         ".field--name-field-publication-date",
@@ -227,9 +227,9 @@ def extract_page_date(soup):
 
 def extract_web_page(url):
     """
-    Collect candidate WHO Africa report links and verify publication dates.
-    Only reports with a confirmed publication date in the current year
-    are returned by this initial scraper.
+    Extract candidate reports from the WHO Africa updates page.
+    Only retain reports whose publication date can be verified
+    and falls in the current calendar year.
     """
     response = fetch_page(url)
     soup = BeautifulSoup(response.text, "html.parser")
@@ -257,7 +257,6 @@ def extract_web_page(url):
         if canonical == canonical_url(url) or canonical in seen:
             continue
 
-        # Skip non-content paths and navigation links.
         path = parts.path.lower()
         if path in {"/", "/rss-feeds", "/about-us", "/contact-us"}:
             continue
@@ -276,7 +275,6 @@ def extract_web_page(url):
 
         published = extract_page_date(report_soup)
 
-        # Do not guess a date or mark an undated page as current.
         if not published:
             print(f"[INFO] Skipping report with unknown date: {canonical}")
             continue
@@ -287,7 +285,8 @@ def extract_web_page(url):
         description_element = (
             report_soup.find("meta", attrs={"name": "description"})
             or report_soup.find(
-                "meta", attrs={"property": "og:description"}
+                "meta",
+                attrs={"property": "og:description"}
             )
         )
 
@@ -308,13 +307,14 @@ def extract_web_page(url):
             break
 
     print(
-        f"[INFO] {url}: extracted {len(results)} "
+        f"[INFO] WHO Africa scraper extracted {len(results)} "
         f"dated reports for {CURRENT_YEAR}"
     )
     return results
 
 
 def collect_once():
+    """Collect, classify, deduplicate, and save articles from enabled sources."""
     init_db()
     new_count = 0
 
@@ -322,9 +322,10 @@ def collect_once():
         if not source.get("enabled"):
             continue
 
-        try:
-            source_type = source.get("type")
+        source_name = source.get("name", "Unknown source")
+        source_type = source.get("type")
 
+        try:
             if source_type == "rss":
                 parsed = feedparser.parse(
                     source["url"],
@@ -333,8 +334,8 @@ def collect_once():
 
                 if parsed.bozo and not parsed.entries:
                     print(
-                        f"[WARN] Could not read feed: "
-                        f"{source['name']} ({parsed.bozo_exception})"
+                        f"[WARN] Could not read feed: {source_name}: "
+                        f"{parsed.bozo_exception}"
                     )
                     continue
 
@@ -365,13 +366,16 @@ def collect_once():
 
             else:
                 print(
-                    f"[WARN] Unsupported source type: {source_type}"
+                    f"[WARN] Unsupported source type for {source_name}: "
+                    f"{source_type}"
                 )
                 continue
 
         except Exception as exc:
-            print(f"[WARN] Source failed: {source['name']}: {exc}")
+            print(f"[WARN] Source failed: {source_name}: {exc}")
             continue
+
+        source_new_count = 0
 
         for entry in entries:
             title = (entry.get("title") or "Untitled").strip()
@@ -383,90 +387,110 @@ def collect_once():
             published = entry.get("published", "")
             description = entry.get("description", "")
 
-            
-           if source.get("type") in {"who_api", "web_scrape"}:
-              parsed_published = parse_date(published)
+            if source_type in {"who_api", "web_scrape"}:
+                parsed_published = parse_date(published)
 
-              if not parsed_published:
-                 print(
-                  f"[WARN] Publication date could not be parsed: {title}"
-                   )
+                if not parsed_published:
+                    print(
+                        f"[WARN] Publication date could not be parsed: "
+                        f"{title}"
+                    )
 
-        # Keep valid WHO API records even if the date format
-        # is unfamiliar. Do not invent a publication date.
-                 if source.get("type") == "web_scrape":
-                    continue
-              else:
+                    # Do not guess a date. Retain the WHO API record
+                    # with its original date string, if present.
+                    if source_type == "web_scrape":
+                        continue
+                else:
                     published = parsed_published
 
+                    # Scraped WHO Africa pages must be from the current year.
+                    if (
+                        source_type == "web_scrape"
+                        and int(published[:4]) != CURRENT_YEAR
+                    ):
+                        continue
 
-            with sqlite3.connect(DB_PATH) as conn:
-                conn.row_factory = sqlite3.Row
+            try:
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.row_factory = sqlite3.Row
 
-                existing = conn.execute(
-                    "SELECT id FROM articles WHERE original_url = ?",
-                    (link,)
-                ).fetchone()
+                    existing = conn.execute(
+                        "SELECT id FROM articles WHERE original_url = ?",
+                        (link,)
+                    ).fetchone()
 
-                if existing:
-                    continue
+                    if existing:
+                        continue
 
-                possible = conn.execute(
-                    """
-                    SELECT id, title
-                    FROM articles
-                    WHERE collected_at >= datetime('now', '-30 days')
-                    """
-                ).fetchall()
+                    possible = conn.execute(
+                        """
+                        SELECT id, title
+                        FROM articles
+                        WHERE collected_at >= datetime('now', '-30 days')
+                        """
+                    ).fetchall()
 
-                duplicate_id = None
-                for old in possible:
-                    if ratio(title.lower(), old["title"].lower()) >= 94:
-                        duplicate_id = old["id"]
-                        break
+                    duplicate_id = None
+                    for old in possible:
+                        if ratio(title.lower(), old["title"].lower()) >= 94:
+                            duplicate_id = old["id"]
+                            break
 
-                fields = classify_and_summarize(
-                    title,
-                    description,
-                    source["name"],
-                    published
-                )
-
-                # Store the publication date in normalized ISO format.
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO articles
-                    (
-                        title, original_url, source_name, published_at,
-                        collected_at, description, is_relevant, category,
-                        disease_event, country_region, event_date,
-                        outbreak_status, ai_summary, ai_processed,
-                        duplicate_of
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
+                    fields = classify_and_summarize(
                         title,
-                        link,
-                        source["name"],
-                        published,
-                        utc_now(),
-                        description[:10000],
-                        int(fields["is_relevant"]),
-                        fields["category"],
-                        fields["disease_event"],
-                        fields["country_region"],
-                        fields["event_date"],
-                        fields["outbreak_status"],
-                        fields["summary"],
-                        int(fields.get("_ai_processed", False)),
-                        duplicate_id
+                        description,
+                        source_name,
+                        published
                     )
+
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO articles
+                        (
+                            title, original_url, source_name, published_at,
+                            collected_at, description, is_relevant, category,
+                            disease_event, country_region, event_date,
+                            outbreak_status, ai_summary, ai_processed,
+                            duplicate_of
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            title,
+                            link,
+                            source_name,
+                            published,
+                            utc_now(),
+                            description[:10000],
+                            int(fields["is_relevant"]),
+                            fields["category"],
+                            fields["disease_event"],
+                            fields["country_region"],
+                            fields["event_date"],
+                            fields["outbreak_status"],
+                            fields["summary"],
+                            int(fields.get("_ai_processed", False)),
+                            duplicate_id
+                        )
+                    )
+
+                    if conn.execute("SELECT changes()").fetchone()[0]:
+                        new_count += 1
+                        source_new_count += 1
+
+            except Exception as exc:
+                print(
+                    f"[WARN] Could not save article from "
+                    f"{source_name} ({title}): {exc}"
                 )
+                continue
 
-                if conn.execute("SELECT changes()").fetchone()[0]:
-                    new_count += 1
+        print(
+            f"[INFO] Collection finished for {source_name}: "
+            f"{source_new_count} new records"
+        )
 
+    print(f"[INFO] Total new records collected: {new_count}")
     return new_count
 
 
