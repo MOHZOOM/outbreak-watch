@@ -92,6 +92,7 @@ Feed description: {description[:5000]}
             input=prompt,
             max_output_tokens=250
         )
+        print("[INFO] OpenAI API call succeeded")
         raw = response.output_text.strip()
         # Handle occasional fenced JSON conservatively.
         raw = raw.removeprefix("```json").removesuffix("```").strip()
