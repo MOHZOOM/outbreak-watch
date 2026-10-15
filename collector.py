@@ -189,29 +189,31 @@ def extract_who_api(url):
             else None
         ) or item.get("Title") or "Untitled WHO report"
 
-        link = item.get("ItemDefaultUrl") or ""
-        slug = item.get("UrlName") or ""
+        link = (
+            item.get("ItemDefaultUrl")
+            or item.get("CanonicalUrl")
+            or item.get("Url")
+            or item.get("URL")
+            or ""
+        )
+        slug = str(item.get("UrlName") or "").strip("/")
 
-        if link and not link.startswith("http"):
-            link = urljoin("https://www.who.int/", link.lstrip("/"))
-
-        if link:
-            parts = urlsplit(link)
-            segment = parts.path.strip("/").split("/")[-1]
-
-            if (
-                parts.netloc.lower() in {"who.int", "www.who.int"}
-                and "-DON" in segment
-                and "/" not in parts.path.strip("/")
-            ):
-                link = (
-                    "https://www.who.int/emergencies/"
-                    f"disease-outbreak-news/item/{segment}"
-                )
-        elif slug:
+        # Prefer WHO's standard DON page when the API provides a DON identifier.
+        # This avoids keeping a title-based URL when a canonical DON ID exists.
+        if slug and "-DON" in slug.upper():
             link = (
                 "https://www.who.int/emergencies/"
-                f"disease-outbreak-news/item/{slug.strip('/')}"
+                f"disease-outbreak-news/item/{slug}"
+            )
+        elif link:
+            # Preserve the URL provided by WHO; only make relative URLs absolute.
+            if not link.startswith(("http://", "https://")):
+                link = urljoin("https://www.who.int/", link.lstrip("/"))
+        elif slug:
+            # Last-resort fallback if WHO supplies a slug but no URL.
+            link = urljoin(
+                "https://www.who.int/",
+                f"emergencies/disease-outbreak-news/item/{slug}"
             )
 
         # Prefer original publication dates over modification dates.
