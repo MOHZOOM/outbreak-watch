@@ -198,6 +198,21 @@ def extract_who_api(url):
         )
         slug = str(item.get("UrlName") or "").strip("/")
 
+        # Temporary diagnostic: inspect URL fields for the MERS report.
+        if "middle east respiratory syndrome" in title.lower():
+            print(
+                "[DEBUG] MERS URL fields: "
+                + json.dumps({
+                    "ItemDefaultUrl": item.get("ItemDefaultUrl"),
+                    "CanonicalUrl": item.get("CanonicalUrl"),
+                    "Url": item.get("Url"),
+                    "URL": item.get("URL"),
+                    "UrlName": item.get("UrlName"),
+                    "Title": title,
+                }),
+                flush=True
+            )
+
         # Prefer WHO's standard DON page when the API provides a DON identifier.
         # This avoids keeping a title-based URL when a canonical DON ID exists.
         if slug and "-DON" in slug.upper():
