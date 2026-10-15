@@ -198,8 +198,25 @@ def extract_who_api(url):
         )
         slug = str(item.get("UrlName") or "").strip("/")
 
-        # Temporary diagnostic: inspect URL fields for the MERS report.
-        if "middle east respiratory syndrome" in title.lower():
+        # Temporary diagnostic: inspect WHO URL fields for MERS reports.
+        # Match multiple fields because WHO may use an override title or a short title.
+        mers_search_text = " ".join(
+            str(item.get(field) or "")
+            for field in (
+                "Title",
+                "OverrideTitle",
+                "UrlName",
+                "ItemDefaultUrl",
+                "CanonicalUrl",
+                "Url",
+                "URL",
+            )
+        ).lower()
+
+        if (
+            "mers" in mers_search_text
+            or "middle east respiratory" in mers_search_text
+        ):
             print(
                 "[DEBUG] MERS URL fields: "
                 + json.dumps({
@@ -208,8 +225,10 @@ def extract_who_api(url):
                     "Url": item.get("Url"),
                     "URL": item.get("URL"),
                     "UrlName": item.get("UrlName"),
-                    "Title": title,
-                }),
+                    "Title": item.get("Title"),
+                    "OverrideTitle": item.get("OverrideTitle"),
+                    "ResolvedTitle": title,
+                }, ensure_ascii=False),
                 flush=True
             )
 
@@ -229,6 +248,15 @@ def extract_who_api(url):
             link = urljoin(
                 "https://www.who.int/",
                 f"emergencies/disease-outbreak-news/item/{slug}"
+            )
+
+        if (
+            "mers" in mers_search_text
+            or "middle east respiratory" in mers_search_text
+        ):
+            print(
+                f"[DEBUG] MERS resolved URL: {link!r}",
+                flush=True
             )
 
         # Prefer original publication dates over modification dates.
