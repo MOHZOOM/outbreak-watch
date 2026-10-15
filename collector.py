@@ -744,20 +744,60 @@ def extract_with_scrapegraphai(listing_url):
             try:
                 install = subprocess.run(
                     [sys.executable, "-m", "playwright", "install", "chromium"],
-                    check=True,
+                    check=False,
                     capture_output=True,
                     text=True,
                     timeout=240,
                 )
                 if install.stdout.strip():
-                    print("[INFO] Playwright install output: " + install.stdout[-3000:], flush=True)
+                    print("[INFO] Playwright install output: " + install.stdout[-5000:], flush=True)
                 if install.stderr.strip():
-                    print("[INFO] Playwright install details: " + install.stderr[-3000:], flush=True)
+                    print("[INFO] Playwright install details: " + install.stderr[-5000:], flush=True)
+
+                try:
+                    from playwright.sync_api import sync_playwright
+                    with sync_playwright() as playwright:
+                        expected = Path(playwright.chromium.executable_path)
+                    print(
+                        f"[INFO] Playwright expected Chromium executable: {expected}; "
+                        f"exists={expected.exists()}",
+                        flush=True,
+                    )
+                    if expected.parent.exists():
+                        print(
+                            "[INFO] Chromium executable directory contents: "
+                            + ", ".join(p.name for p in expected.parent.iterdir())[:3000],
+                            flush=True,
+                        )
+                    print(
+                        f"[INFO] PLAYWRIGHT_BROWSERS_PATH={os.getenv('PLAYWRIGHT_BROWSERS_PATH')!r}; "
+                        f"HOME={os.getenv('HOME')!r}",
+                        flush=True,
+                    )
+                except Exception as diagnostic_exc:
+                    print(
+                        f"[WARN] Could not inspect Playwright browser cache: {diagnostic_exc}",
+                        flush=True,
+                    )
+
+                if install.returncode != 0:
+                    print(
+                        f"[WARN] Chromium installation exited with code {install.returncode}. "
+                        "See Playwright install output above. Continuing with the regular HTML scraper.",
+                        flush=True,
+                    )
+                    return []
+
                 extracted = run_graph()
             except Exception as retry_exc:
+                details = ""
+                if getattr(retry_exc, "stdout", None):
+                    details += f" stdout={retry_exc.stdout[-3000:]}"
+                if getattr(retry_exc, "stderr", None):
+                    details += f" stderr={retry_exc.stderr[-3000:]}"
                 print(
                     "[WARN] ScrapeGraphAI retry after Chromium recovery failed for "
-                    f"{listing_url}: {retry_exc}. Continuing with the regular HTML scraper.",
+                    f"{listing_url}: {retry_exc}.{details} Continuing with the regular HTML scraper.",
                     flush=True,
                 )
                 return []
