@@ -7,3 +7,4 @@ openai>=1.40.0
 gunicorn>=22.0,<24.0
 beautifulsoup4
 scrapegraphai
+playwright
