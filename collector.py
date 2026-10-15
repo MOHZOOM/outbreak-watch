@@ -2,6 +2,8 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, urljoin
@@ -700,7 +702,7 @@ def extract_with_scrapegraphai(listing_url):
     Do not invent titles or URLs. Do not infer or invent publication dates.
     """
 
-    try:
+    def run_graph():
         graph = SmartScraperGraph(
             prompt=prompt,
             source=listing_url,
@@ -714,10 +716,54 @@ def extract_with_scrapegraphai(listing_url):
                 "headless": True,
             },
         )
-        extracted = graph.run()
+        return graph.run()
+
+    try:
+        extracted = run_graph()
     except Exception as exc:
-        print(f"[WARN] ScrapeGraphAI failed for {listing_url}: {exc}", flush=True)
-        return []
+        error_text = str(exc)
+        missing_browser = (
+            "Executable doesn't exist" in error_text
+            or "Executable does not exist" in error_text
+            or "executable doesn't exist" in error_text.lower()
+        )
+
+        # Render may build successfully but run without the browser binary in
+        # Playwright's cache. Recover only this failure and retry once.
+        if missing_browser:
+            browser_path = os.getenv(
+                "PLAYWRIGHT_BROWSERS_PATH",
+                str(Path.home() / ".cache" / "ms-playwright"),
+            )
+            print(
+                "[WARN] ScrapeGraphAI browser executable is missing. "
+                f"Playwright cache: {browser_path!r}. Attempting one Chromium install "
+                "in the running service before retrying.",
+                flush=True,
+            )
+            try:
+                install = subprocess.run(
+                    [sys.executable, "-m", "playwright", "install", "chromium"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=240,
+                )
+                if install.stdout.strip():
+                    print("[INFO] Playwright install output: " + install.stdout[-3000:], flush=True)
+                if install.stderr.strip():
+                    print("[INFO] Playwright install details: " + install.stderr[-3000:], flush=True)
+                extracted = run_graph()
+            except Exception as retry_exc:
+                print(
+                    "[WARN] ScrapeGraphAI retry after Chromium recovery failed for "
+                    f"{listing_url}: {retry_exc}. Continuing with the regular HTML scraper.",
+                    flush=True,
+                )
+                return []
+        else:
+            print(f"[WARN] ScrapeGraphAI failed for {listing_url}: {exc}", flush=True)
+            return []
 
     if isinstance(extracted, dict):
         candidates = extracted.get("articles", [])
