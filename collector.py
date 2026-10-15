@@ -1,4 +1,3 @@
-
 import json
 import os
 import re
@@ -28,8 +27,6 @@ USER_AGENT = (
     "OutbreakWatchMVP/0.4 "
     "(public-health news aggregator)"
 )
-
-WHO_AFRO_HOSTS = {"www.afro.who.int", "afro.who.int"}
 
 OUTBREAK_KEYWORDS = (
     "outbreak", "ebola", "mpox", "cholera", "yellow fever",
@@ -85,7 +82,6 @@ def parse_date(value):
 
     value = str(value).strip()
 
-    # ISO date and datetime formats.
     try:
         return datetime.fromisoformat(
             value.replace("Z", "+00:00")
@@ -113,7 +109,6 @@ def parse_date(value):
         except ValueError:
             continue
 
-    # Find a date inside longer text, such as a listing card.
     patterns = (
         r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b",
         r"\b(\d{1,2})\s+"
@@ -130,13 +125,16 @@ def parse_date(value):
             continue
 
         try:
-            return datetime.strptime(
-                match.group(0).replace(",", ""),
-                "%Y-%m-%d"
-            ).date().isoformat() if re.match(
-                r"20\d{2}[-/]", match.group(0)
-            ) else parse_date_simple(match.group(0))
-        except ValueError:
+            matched = match.group(0).replace(",", "")
+            if re.match(r"20\d{2}[-/]", matched):
+                matched = matched.replace("/", "-")
+                parts = matched.split("-")
+                return datetime(
+                    int(parts[0]), int(parts[1]), int(parts[2])
+                ).date().isoformat()
+
+            return parse_date_simple(matched)
+        except (ValueError, TypeError):
             continue
 
     return ""
@@ -156,7 +154,7 @@ def parse_date_simple(value):
 
 def is_2026_report(value):
     parsed = parse_date(value)
-    return bool(parsed and parsed.startswith("2026-"))
+    return bool(parsed and parsed.startswith(f"{CURRENT_YEAR}-"))
 
 
 def extract_who_api(url):
@@ -216,14 +214,13 @@ def extract_who_api(url):
                 f"disease-outbreak-news/item/{slug.strip('/')}"
             )
 
-        # Check several possible API date fields.
+        # Prefer original publication dates over modification dates.
         date_fields = (
             "PublicationDateAndTime",
             "PublicationDate",
             "DatePublished",
             "DateCreated",
-            "Created",
-            "LastModified"
+            "Created"
         )
 
         raw_date = ""
@@ -231,16 +228,13 @@ def extract_who_api(url):
 
         for field in date_fields:
             candidate = item.get(field)
-
             if candidate:
-                raw_date = str(candidate)
-                parsed_date = parse_date(candidate)
-
-                if parsed_date:
+                parsed_candidate = parse_date(candidate)
+                if parsed_candidate:
+                    raw_date = str(candidate)
+                    parsed_date = parsed_candidate
                     break
 
-        # Diagnostic output: shows actual API date fields for the
-        # first five items, even when those items are rejected.
         if len(results) < 5 and rejected_dates < 5:
             print(
                 f"[DEBUG] WHO title={title!r}; "
@@ -249,7 +243,7 @@ def extract_who_api(url):
                 flush=True
             )
 
-        if not parsed_date or not parsed_date.startswith("2026-"):
+        if not is_2026_report(parsed_date):
             rejected_dates += 1
             continue
 
@@ -282,28 +276,30 @@ def extract_who_api(url):
 
 
 def extract_page_date(soup):
-    """Find publication dates in HTML metadata or structured data."""
-    candidates = [
+    """Extract an article's original publication date from HTML metadata."""
+    candidates = (
         ("meta", {"property": "article:published_time"}, "content"),
+        ("meta", {"name": "datePublished"}, "content"),
         ("meta", {"name": "date"}, "content"),
         ("meta", {"name": "pubdate"}, "content"),
         ("meta", {"name": "publish-date"}, "content"),
         ("meta", {"name": "publication_date"}, "content"),
         ("meta", {"itemprop": "datePublished"}, "content"),
         ("meta", {"property": "og:article:published_time"}, "content"),
-        ("time", {"datetime": True}, "datetime")
-    ]
+        ("meta", {"name": "DC.date.issued"}, "content"),
+        ("meta", {"name": "dcterms.issued"}, "content"),
+        ("time", {"datetime": True}, "datetime"),
+    )
 
     for tag, attrs, attr in candidates:
-        element = soup.find(tag, attrs=attrs)
-        if element:
+        for element in soup.find_all(tag, attrs=attrs):
             parsed = parse_date(
-                element.get(attr)
-                or element.get_text(" ", strip=True)
+                element.get(attr) or element.get_text(" ", strip=True)
             )
             if parsed:
                 return parsed
 
+    # Inspect structured data, including nested @graph objects.
     for script in soup.find_all(
         "script", attrs={"type": "application/ld+json"}
     ):
@@ -312,32 +308,42 @@ def extract_page_date(soup):
         except (json.JSONDecodeError, TypeError):
             continue
 
-        objects = data if isinstance(data, list) else [data]
+        pending = data if isinstance(data, list) else [data]
 
-        for obj in objects:
+        while pending:
+            obj = pending.pop(0)
+
+            if isinstance(obj, list):
+                pending.extend(obj)
+                continue
+
             if not isinstance(obj, dict):
                 continue
 
-            if isinstance(obj.get("@graph"), list):
-                objects.extend(
-                    x for x in obj["@graph"] if isinstance(x, dict)
-                )
+            graph = obj.get("@graph")
+            if isinstance(graph, list):
+                pending.extend(graph)
 
             for key in ("datePublished", "dateCreated"):
                 parsed = parse_date(obj.get(key))
                 if parsed:
                     return parsed
 
+    # Check common visible date components.
     for selector in (
+        "time[datetime]",
         ".date",
         ".published-date",
+        ".publication-date",
         ".field--name-field-publication-date",
-        "time"
+        ".article-date",
+        ".news-date",
+        "[itemprop='datePublished']",
     ):
-        element = soup.select_one(selector)
-        if element:
+        for element in soup.select(selector):
             parsed = parse_date(
                 element.get("datetime")
+                or element.get("content")
                 or element.get_text(" ", strip=True)
             )
             if parsed:
@@ -366,27 +372,53 @@ def extract_listing_date(link_tag):
 
 
 def extract_web_page(url):
-    """Extract only WHO Africa reports with a verified 2026 date."""
+    """
+    Scrape article pages from the configured website.
+    Only verified 2026 publication dates are accepted.
+    """
     response = fetch_page(url)
     soup = BeautifulSoup(response.text, "html.parser")
 
+    source_host = (urlsplit(url).hostname or "").lower()
+    allowed_hosts = {source_host}
+
+    if source_host.startswith("www."):
+        allowed_hosts.add(source_host[4:])
+    else:
+        allowed_hosts.add("www." + source_host)
+
     results = []
     seen = set()
-    candidates = 0
+    checked = 0
+    max_pages_to_check = MAX_ENTRIES_PER_SOURCE * 3
+
+    article_path_hints = (
+        "news", "outbreak", "emergency", "emergencies", "update",
+        "updates", "publication", "disease", "health", "situation",
+    )
+
+    ignored_path_parts = (
+        "/rss", "/feed", "/search", "/taxonomy/", "/user/",
+        "/contact", "/about", "/privacy", "/accessibility",
+    )
 
     for link_tag in soup.select("a[href]"):
         title = " ".join(link_tag.get_text(" ", strip=True).split())
         href = urljoin(url, link_tag.get("href", ""))
+        parts = urlsplit(href)
+        host = (parts.hostname or "").lower()
+        path = parts.path.lower()
 
         if not title or len(title) < 12:
             continue
 
-        parts = urlsplit(href)
-
         if parts.scheme not in {"http", "https"}:
             continue
 
-        if parts.netloc.lower() not in WHO_AFRO_HOSTS:
+        if host not in allowed_hosts:
+            continue
+
+        if any(piece in path for piece in ignored_path_parts):
             continue
 
         canonical = canonical_url(href)
@@ -395,20 +427,33 @@ def extract_web_page(url):
             continue
 
         seen.add(canonical)
-        path = parts.path.lower()
 
-        if path in {"/", "/rss-feeds", "/about-us", "/contact-us"}:
+        title_and_path = (title + " " + path).lower()
+
+        keyword_match = any(
+            word in title_and_path for word in OUTBREAK_KEYWORDS
+        )
+
+        path_hint_match = any(
+            word in path for word in article_path_hints
+        )
+
+        # Avoid fetching ordinary navigation links.
+        if not keyword_match and not path_hint_match:
             continue
 
-        if not any(
-            keyword in (title + " " + path).lower()
-            for keyword in OUTBREAK_KEYWORDS
-        ):
-            continue
+        checked += 1
 
-        candidates += 1
+        if checked > max_pages_to_check:
+            print(
+                "[INFO] Web scraper reached its page-check limit",
+                flush=True
+            )
+            break
+
         published = extract_listing_date(link_tag)
         description = ""
+        article_title = title
 
         try:
             article_response = fetch_page(canonical)
@@ -420,8 +465,21 @@ def extract_web_page(url):
             if not published:
                 published = extract_page_date(article_soup)
 
+            # Prefer the actual article heading.
+            heading = article_soup.find(["h1", "h2"])
+
+            if heading:
+                heading_text = " ".join(
+                    heading.get_text(" ", strip=True).split()
+                )
+
+                if len(heading_text) >= 12:
+                    article_title = heading_text
+
             description_tag = (
-                article_soup.find("meta", attrs={"name": "description"})
+                article_soup.find(
+                    "meta", attrs={"name": "description"}
+                )
                 or article_soup.find(
                     "meta", attrs={"property": "og:description"}
                 )
@@ -430,35 +488,53 @@ def extract_web_page(url):
             if description_tag:
                 description = description_tag.get("content", "")
 
+            if not description:
+                main_content = (
+                    article_soup.find("main")
+                    or article_soup.find("article")
+                )
+
+                if main_content:
+                    description = " ".join(
+                        main_content.get_text(" ", strip=True).split()
+                    )
+
         except requests.RequestException as exc:
             print(
-                f"[WARN] Could not fetch {canonical}: {exc}",
+                f"[WARN] Could not fetch article {canonical}: {exc}",
                 flush=True
             )
             continue
 
+        relevant_text = (
+            article_title + " " + path + " " + description[:1500]
+        ).lower()
+
+        if not any(word in relevant_text for word in OUTBREAK_KEYWORDS):
+            continue
+
         if not is_2026_report(published):
             print(
-                f"[DEBUG] Africa report excluded: {title!r}; "
-                f"date={published!r}",
+                f"[DEBUG] HTML report excluded: "
+                f"{article_title!r}; date={published!r}",
                 flush=True
             )
             continue
 
         results.append({
-            "title": title[:500],
+            "title": article_title[:500],
             "link": canonical,
             "description": description[:5000],
-            "published": parse_date(published)
+            "published": parse_date(published),
         })
 
         if len(results) >= MAX_ENTRIES_PER_SOURCE:
             break
 
     print(
-        f"[INFO] WHO Africa candidates: {candidates}; "
-        f"dated 2026 reports: {len(results)}",
-        flush=True
+        f"[INFO] HTML scraper checked {checked} candidate pages; "
+        f"found {len(results)} dated 2026 reports from {source_host}",
+        flush=True,
     )
 
     return results
@@ -466,13 +542,19 @@ def extract_web_page(url):
 
 def collect_once():
     """Collect only reports published in 2026."""
-    print("[INFO] Collector started; year filter: 2026", flush=True)
+    print(
+        f"[INFO] Collector started; year filter: {CURRENT_YEAR}",
+        flush=True
+    )
 
     init_db()
     new_count = 0
     sources = load_sources()
 
-    print(f"[INFO] Loaded {len(sources)} configured sources", flush=True)
+    print(
+        f"[INFO] Loaded {len(sources)} configured sources",
+        flush=True
+    )
 
     for source in sources:
         if not source.get("enabled"):
@@ -499,6 +581,7 @@ def collect_once():
                     source["url"],
                     request_headers={"User-Agent": USER_AGENT}
                 )
+
                 entries = []
 
                 for item in feed.entries[:MAX_ENTRIES_PER_SOURCE]:
@@ -507,9 +590,10 @@ def collect_once():
                         or item.get("updated")
                         or ""
                     )
+
                     published = parse_date(raw_date)
 
-                    if not published.startswith("2026-"):
+                    if not is_2026_report(published):
                         continue
 
                     entries.append({
@@ -546,7 +630,7 @@ def collect_once():
             description = entry.get("description", "")
 
             # Final safeguard before AI processing and database insertion.
-            if not title or not link or not published.startswith("2026-"):
+            if not title or not link or not is_2026_report(published):
                 continue
 
             try:
@@ -572,7 +656,9 @@ def collect_once():
                     duplicate_id = None
 
                     for old in possible:
-                        if ratio(title.lower(), old["title"].lower()) >= 94:
+                        if ratio(
+                            title.lower(), old["title"].lower()
+                        ) >= 94:
                             duplicate_id = old["id"]
                             break
 
@@ -634,6 +720,7 @@ def collect_once():
         f"[INFO] Collection finished. New 2026 records: {new_count}",
         flush=True
     )
+
     return new_count
 
 
