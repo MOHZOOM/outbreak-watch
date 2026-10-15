@@ -1,7 +1,7 @@
 [
   {
     "name": "WHO Disease Outbreak News",
-    "url": "https://cms.who.int/api/news/diseaseoutbreaknews",
+    "url": "https://cms.who.int/api/hubs/diseaseoutbreaknews",
     "type": "who_api",
     "enabled": true
   },
