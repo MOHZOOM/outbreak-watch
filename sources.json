@@ -1,3 +1,4 @@
+
 [
   {
     "name": "WHO Disease Outbreak News",
@@ -5,12 +6,22 @@
     "type": "who_api",
     "enabled": true
   },
-  
   {
     "name": "WHO AFRO Emergencies and Outbreaks",
     "url": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
     "type": "web_scrape",
     "enabled": true
+  },
+  {
+    "name": "WHO AFRO Emergencies RSS",
+    "url": "https://afro.who.int/rss/emergencies.xml",
+    "type": "rss",
+    "enabled": true
+  },
+  {
+    "name": "CDC Outbreaks RSS",
+    "url": "https://tools.cdc.gov/api/v2/resources/media/281321.rss",
+    "type": "rss",
+    "enabled": true
   }
-
 ]
