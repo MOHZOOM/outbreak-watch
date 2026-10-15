@@ -15,7 +15,6 @@ from ai_processor import classify_and_summarize
 
 
 BASE_DIR = Path(__file__).resolve().parent
-
 DB_PATH = os.getenv(
     "DATABASE_PATH",
     str(BASE_DIR / "outbreak_watch.db")
@@ -26,21 +25,18 @@ REQUEST_TIMEOUT = 25
 MAX_ENTRIES_PER_SOURCE = 100
 
 USER_AGENT = (
-    "OutbreakWatchMVP/0.3 "
+    "OutbreakWatchMVP/0.4 "
     "(public-health news aggregator)"
 )
 
-WHO_AFRO_HOSTS = {
-    "www.afro.who.int",
-    "afro.who.int"
-}
+WHO_AFRO_HOSTS = {"www.afro.who.int", "afro.who.int"}
 
 OUTBREAK_KEYWORDS = (
     "outbreak", "ebola", "mpox", "cholera", "yellow fever",
     "measles", "polio", "marburg", "epidemic", "influenza",
     "disease", "emergency", "public health", "health threat",
-    "avian influenza", "meningitis", "dengue", "plague",
-    "situation report", "health emergency"
+    "meningitis", "dengue", "plague", "situation report",
+    "health emergency", "avian influenza", "hepatitis"
 )
 
 
@@ -50,7 +46,6 @@ def utc_now():
 
 def canonical_url(url):
     parts = urlsplit((url or "").strip())
-
     return urlunsplit((
         parts.scheme.lower(),
         parts.netloc.lower(),
@@ -84,12 +79,13 @@ def fetch_page(url):
 
 
 def parse_date(value):
-    """Return a parsed date as YYYY-MM-DD, or an empty string."""
+    """Parse supported date strings and return YYYY-MM-DD."""
     if not value:
         return ""
 
     value = str(value).strip()
 
+    # ISO date and datetime formats.
     try:
         return datetime.fromisoformat(
             value.replace("Z", "+00:00")
@@ -99,13 +95,16 @@ def parse_date(value):
 
     formats = (
         "%Y-%m-%d",
+        "%Y/%m/%d",
         "%d %B %Y",
         "%B %d, %Y",
         "%d %b %Y",
         "%b %d, %Y",
-        "%Y/%m/%d",
         "%d/%m/%Y",
-        "%m/%d/%Y"
+        "%m/%d/%Y",
+        "%d-%m-%Y",
+        "%d-%b-%Y",
+        "%d-%B-%Y"
     )
 
     for fmt in formats:
@@ -114,29 +113,54 @@ def parse_date(value):
         except ValueError:
             continue
 
-    match = re.search(
+    # Find a date inside longer text, such as a listing card.
+    patterns = (
         r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b",
-        value
+        r"\b(\d{1,2})\s+"
+        r"(January|February|March|April|May|June|July|August|"
+        r"September|October|November|December)\s+(20\d{2})\b",
+        r"\b(January|February|March|April|May|June|July|August|"
+        r"September|October|November|December)\s+"
+        r"(\d{1,2}),?\s+(20\d{2})\b"
     )
 
-    if match:
+    for pattern in patterns:
+        match = re.search(pattern, value, re.IGNORECASE)
+        if not match:
+            continue
+
         try:
-            year, month, day = map(int, match.groups())
-            return datetime(year, month, day).date().isoformat()
+            return datetime.strptime(
+                match.group(0).replace(",", ""),
+                "%Y-%m-%d"
+            ).date().isoformat() if re.match(
+                r"20\d{2}[-/]", match.group(0)
+            ) else parse_date_simple(match.group(0))
         except ValueError:
-            pass
+            continue
 
     return ""
 
 
-def is_2026_report(date_value):
-    """Accept only reports with a verified publication date in 2026."""
-    parsed = parse_date(date_value)
+def parse_date_simple(value):
+    for fmt in (
+        "%d %B %Y", "%d %b %Y",
+        "%B %d %Y", "%b %d %Y"
+    ):
+        try:
+            return datetime.strptime(value, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return ""
+
+
+def is_2026_report(value):
+    parsed = parse_date(value)
     return bool(parsed and parsed.startswith("2026-"))
 
 
 def extract_who_api(url):
-    """Extract reports from the WHO Disease Outbreak News API."""
+    """Read WHO API records and retain only verified 2026 reports."""
     response = requests.get(
         url,
         headers={
@@ -158,6 +182,7 @@ def extract_who_api(url):
         raise ValueError("WHO API response was not a list of records")
 
     results = []
+    rejected_dates = 0
 
     for item in payload:
         title = (
@@ -185,22 +210,47 @@ def extract_who_api(url):
                     "https://www.who.int/emergencies/"
                     f"disease-outbreak-news/item/{segment}"
                 )
-
         elif slug:
             link = (
                 "https://www.who.int/emergencies/"
                 f"disease-outbreak-news/item/{slug.strip('/')}"
             )
 
-        published = (
-            item.get("PublicationDateAndTime")
-            or item.get("PublicationDate")
-            or item.get("DateCreated")
-            or ""
+        # Check several possible API date fields.
+        date_fields = (
+            "PublicationDateAndTime",
+            "PublicationDate",
+            "DatePublished",
+            "DateCreated",
+            "Created",
+            "LastModified"
         )
 
-        # Filter BEFORE AI processing and database insertion.
-        if not is_2026_report(published):
+        raw_date = ""
+        parsed_date = ""
+
+        for field in date_fields:
+            candidate = item.get(field)
+
+            if candidate:
+                raw_date = str(candidate)
+                parsed_date = parse_date(candidate)
+
+                if parsed_date:
+                    break
+
+        # Diagnostic output: shows actual API date fields for the
+        # first five items, even when those items are rejected.
+        if len(results) < 5 and rejected_dates < 5:
+            print(
+                f"[DEBUG] WHO title={title!r}; "
+                f"date field={raw_date!r}; "
+                f"parsed date={parsed_date!r}",
+                flush=True
+            )
+
+        if not parsed_date or not parsed_date.startswith("2026-"):
+            rejected_dates += 1
             continue
 
         description = " ".join(
@@ -219,43 +269,43 @@ def extract_who_api(url):
                 "title": str(title).strip(),
                 "link": link,
                 "description": description.strip(),
-                "published": parse_date(published)
+                "published": parsed_date
             })
 
     print(
-        f"[INFO] WHO API: {len(results)} reports dated {CURRENT_YEAR}",
+        f"[INFO] WHO API: {len(results)} dated 2026 reports; "
+        f"{rejected_dates} rejected as undated or outside 2026",
         flush=True
     )
+
     return results
 
 
 def extract_page_date(soup):
-    """Read a publication date from common metadata and page elements."""
+    """Find publication dates in HTML metadata or structured data."""
     candidates = [
         ("meta", {"property": "article:published_time"}, "content"),
-        ("meta", {"property": "article:modified_time"}, "content"),
         ("meta", {"name": "date"}, "content"),
         ("meta", {"name": "pubdate"}, "content"),
         ("meta", {"name": "publish-date"}, "content"),
         ("meta", {"name": "publication_date"}, "content"),
         ("meta", {"itemprop": "datePublished"}, "content"),
+        ("meta", {"property": "og:article:published_time"}, "content"),
         ("time", {"datetime": True}, "datetime")
     ]
 
     for tag, attrs, attr in candidates:
         element = soup.find(tag, attrs=attrs)
-
         if element:
-            value = element.get(attr) or element.get_text(" ", strip=True)
-            parsed = parse_date(value)
-
+            parsed = parse_date(
+                element.get(attr)
+                or element.get_text(" ", strip=True)
+            )
             if parsed:
                 return parsed
 
-    # Check JSON-LD structured data.
     for script in soup.find_all(
-        "script",
-        attrs={"type": "application/ld+json"}
+        "script", attrs={"type": "application/ld+json"}
     ):
         try:
             data = json.loads(script.string or script.get_text())
@@ -268,6 +318,11 @@ def extract_page_date(soup):
             if not isinstance(obj, dict):
                 continue
 
+            if isinstance(obj.get("@graph"), list):
+                objects.extend(
+                    x for x in obj["@graph"] if isinstance(x, dict)
+                )
+
             for key in ("datePublished", "dateCreated"):
                 parsed = parse_date(obj.get(key))
                 if parsed:
@@ -275,18 +330,16 @@ def extract_page_date(soup):
 
     for selector in (
         ".date",
-        ".field--name-field-publication-date",
         ".published-date",
+        ".field--name-field-publication-date",
         "time"
     ):
         element = soup.select_one(selector)
-
         if element:
             parsed = parse_date(
                 element.get("datetime")
                 or element.get_text(" ", strip=True)
             )
-
             if parsed:
                 return parsed
 
@@ -294,14 +347,14 @@ def extract_page_date(soup):
 
 
 def extract_listing_date(link_tag):
-    """Try to find a date displayed near an article link."""
+    """Look for a publication date near a link on a listing page."""
     current = link_tag
 
-    for _ in range(4):
+    for _ in range(5):
         if current is None:
             break
 
-        text = current.get_text(" ", strip=True)[:1500]
+        text = current.get_text(" ", strip=True)[:2000]
         parsed = parse_date(text)
 
         if parsed:
@@ -313,13 +366,13 @@ def extract_listing_date(link_tag):
 
 
 def extract_web_page(url):
-    """Collect only dated 2026 outbreak reports from WHO Africa."""
+    """Extract only WHO Africa reports with a verified 2026 date."""
     response = fetch_page(url)
     soup = BeautifulSoup(response.text, "html.parser")
 
     results = []
     seen = set()
-    candidate_count = 0
+    candidates = 0
 
     for link_tag in soup.select("a[href]"):
         title = " ".join(link_tag.get_text(" ", strip=True).split())
@@ -338,62 +391,58 @@ def extract_web_page(url):
 
         canonical = canonical_url(href)
 
-        if canonical in seen or canonical == canonical_url(url):
+        if canonical == canonical_url(url) or canonical in seen:
             continue
 
+        seen.add(canonical)
         path = parts.path.lower()
 
-        if path in {
-            "/", "/rss-feeds", "/about-us", "/contact-us"
-        }:
+        if path in {"/", "/rss-feeds", "/about-us", "/contact-us"}:
             continue
 
-        # Avoid visiting the same link repeatedly.
-        seen.add(canonical)
-
-        # Restrict candidates to likely article/report links.
-        if not any(word in (title + " " + path).lower()
-                   for word in OUTBREAK_KEYWORDS):
+        if not any(
+            keyword in (title + " " + path).lower()
+            for keyword in OUTBREAK_KEYWORDS
+        ):
             continue
 
-        candidate_count += 1
-
-        # First try the date shown on the listing page.
+        candidates += 1
         published = extract_listing_date(link_tag)
-
-        # Fetch the article if the listing did not provide a usable date.
         description = ""
 
         try:
-            report_response = fetch_page(canonical)
-            report_soup = BeautifulSoup(
-                report_response.text,
+            article_response = fetch_page(canonical)
+            article_soup = BeautifulSoup(
+                article_response.text,
                 "html.parser"
             )
 
             if not published:
-                published = extract_page_date(report_soup)
+                published = extract_page_date(article_soup)
 
-            description_element = (
-                report_soup.find("meta", attrs={"name": "description"})
-                or report_soup.find(
-                    "meta",
-                    attrs={"property": "og:description"}
+            description_tag = (
+                article_soup.find("meta", attrs={"name": "description"})
+                or article_soup.find(
+                    "meta", attrs={"property": "og:description"}
                 )
             )
 
-            if description_element:
-                description = description_element.get("content", "")
+            if description_tag:
+                description = description_tag.get("content", "")
 
         except requests.RequestException as exc:
             print(
-                f"[WARN] Could not fetch report {canonical}: {exc}",
+                f"[WARN] Could not fetch {canonical}: {exc}",
                 flush=True
             )
             continue
 
-        # Strict 2026-only rule. Unknown dates are excluded.
         if not is_2026_report(published):
+            print(
+                f"[DEBUG] Africa report excluded: {title!r}; "
+                f"date={published!r}",
+                flush=True
+            )
             continue
 
         results.append({
@@ -407,7 +456,7 @@ def extract_web_page(url):
             break
 
     print(
-        f"[INFO] WHO Africa candidates: {candidate_count}; "
+        f"[INFO] WHO Africa candidates: {candidates}; "
         f"dated 2026 reports: {len(results)}",
         flush=True
     )
@@ -416,17 +465,14 @@ def extract_web_page(url):
 
 
 def collect_once():
-    """Collect, filter, classify, deduplicate, and save 2026 reports."""
+    """Collect only reports published in 2026."""
     print("[INFO] Collector started; year filter: 2026", flush=True)
 
     init_db()
     new_count = 0
     sources = load_sources()
 
-    print(
-        f"[INFO] Loaded {len(sources)} configured sources",
-        flush=True
-    )
+    print(f"[INFO] Loaded {len(sources)} configured sources", flush=True)
 
     for source in sources:
         if not source.get("enabled"):
@@ -449,32 +495,32 @@ def collect_once():
                 entries = extract_web_page(source["url"])
 
             elif source_type == "rss":
-                parsed_feed = feedparser.parse(
+                feed = feedparser.parse(
                     source["url"],
                     request_headers={"User-Agent": USER_AGENT}
                 )
-
                 entries = []
 
-                for entry in parsed_feed.entries[:MAX_ENTRIES_PER_SOURCE]:
-                    published_raw = (
-                        entry.get("published")
-                        or entry.get("updated")
+                for item in feed.entries[:MAX_ENTRIES_PER_SOURCE]:
+                    raw_date = (
+                        item.get("published")
+                        or item.get("updated")
                         or ""
                     )
+                    published = parse_date(raw_date)
 
-                    if not is_2026_report(published_raw):
+                    if not published.startswith("2026-"):
                         continue
 
                     entries.append({
-                        "title": (entry.get("title") or "Untitled").strip(),
-                        "link": entry.get("link", ""),
+                        "title": item.get("title", "Untitled"),
+                        "link": item.get("link", ""),
                         "description": (
-                            entry.get("summary")
-                            or entry.get("description")
+                            item.get("summary")
+                            or item.get("description")
                             or ""
                         ),
-                        "published": parse_date(published_raw)
+                        "published": published
                     })
 
             else:
@@ -499,16 +545,8 @@ def collect_once():
             published = parse_date(entry.get("published", ""))
             description = entry.get("description", "")
 
-            # Final safeguard: no report reaches AI or the database
-            # unless its publication date is verified as being in 2026.
-            if not is_2026_report(published):
-                print(
-                    f"[INFO] Excluded non-2026/undated report: {title}",
-                    flush=True
-                )
-                continue
-
-            if not title or not link:
+            # Final safeguard before AI processing and database insertion.
+            if not title or not link or not published.startswith("2026-"):
                 continue
 
             try:
@@ -538,7 +576,6 @@ def collect_once():
                             duplicate_id = old["id"]
                             break
 
-                    # Only current-year reports are sent to the AI.
                     fields = classify_and_summarize(
                         title,
                         description,
@@ -583,7 +620,7 @@ def collect_once():
 
             except Exception as exc:
                 print(
-                    f"[WARN] Could not save article '{title}': {exc}",
+                    f"[WARN] Could not save '{title}': {exc}",
                     flush=True
                 )
 
@@ -597,7 +634,6 @@ def collect_once():
         f"[INFO] Collection finished. New 2026 records: {new_count}",
         flush=True
     )
-
     return new_count
 
 
