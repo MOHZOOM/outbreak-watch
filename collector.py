@@ -75,6 +75,55 @@ def fetch_page(url):
     return response
 
 
+def verify_article_url(url):
+    """Return (final URL, page publication date), or empty values for an invalid page."""
+    if not url or urlsplit(url).scheme not in {"http", "https"}:
+        return "", ""
+
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=REQUEST_TIMEOUT,
+            allow_redirects=True,
+        )
+        if response.status_code >= 400:
+            print(
+                f"[WARN] Source URL returned HTTP {response.status_code}: {url}",
+                flush=True,
+            )
+            return "", ""
+
+        # Some sites display a branded not-found page with HTTP 200.
+        page_text = BeautifulSoup(response.text, "html.parser").get_text(
+            " ", strip=True
+        ).lower()
+        not_found_phrases = (
+            "this page cannot be found",
+            "the page or file you are trying to access cannot be found",
+            "the requested url was not found on the server",
+        )
+        if any(phrase in page_text for phrase in not_found_phrases):
+            print(
+                f"[WARN] Source returned a not-found page despite HTTP {response.status_code}: {url}",
+                flush=True,
+            )
+            return "", ""
+
+        final_url = response.url
+        if urlsplit(final_url).scheme not in {"http", "https"}:
+            return "", ""
+
+        # When available, cross-check the date shown on the actual article page.
+        page_published = extract_page_date(
+            BeautifulSoup(response.text, "html.parser")
+        )
+        return final_url, page_published
+    except requests.RequestException as exc:
+        print(f"[WARN] Could not verify source URL {url}: {exc}", flush=True)
+        return "", ""
+
+
 def parse_date(value):
     """Parse supported date strings and return YYYY-MM-DD."""
     if not value:
@@ -158,7 +207,7 @@ def is_2026_report(value):
 
 
 def extract_who_api(url):
-    """Read WHO API records and retain only verified 2026 reports."""
+    """Read WHO records, retain 2026 reports, and verify their source URLs."""
     response = requests.get(
         url,
         headers={
@@ -288,6 +337,32 @@ def extract_who_api(url):
                 flush=True
             )
 
+        if not link:
+            print(
+                f"[WARN] WHO report skipped because it has no source URL: {title!r}",
+                flush=True,
+            )
+            continue
+
+        verified_link, page_published = verify_article_url(link)
+        if not verified_link:
+            print(
+                f"[WARN] WHO report skipped because its URL could not be verified: {title!r}",
+                flush=True,
+            )
+            continue
+
+        # Trust the article page's own publication date when available; the API
+        # date can otherwise make an older article appear to be from 2026.
+        if page_published:
+            if page_published != parsed_date:
+                print(
+                    f"[INFO] WHO date cross-check for {title!r}: "
+                    f"API={parsed_date!r}, page={page_published!r}; using page date.",
+                    flush=True,
+                )
+            parsed_date = page_published
+
         if not is_2026_report(parsed_date):
             rejected_dates += 1
             continue
@@ -303,10 +378,10 @@ def extract_who_api(url):
             if item.get(key)
         )
 
-        if link:
+        if verified_link:
             results.append({
                 "title": str(title).strip(),
-                "link": link,
+                "link": verified_link,
                 "description": description.strip(),
                 "published": parsed_date
             })
@@ -593,6 +668,27 @@ def collect_once():
     )
 
     init_db()
+
+    # Remove the known broken, title-generated WHO URL from older database runs.
+    # Do not substitute an unrelated 2025 report for a claimed 2026 report.
+    broken_mers_url = "%middle-east-respiratory-syndrome-coronavirus---kingdom-of-saudi-arabia%"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        stale_rows = conn.execute(
+            "SELECT id, title FROM articles WHERE lower(original_url) LIKE lower(?)",
+            (broken_mers_url,),
+        ).fetchall()
+        if stale_rows:
+            conn.execute(
+                "DELETE FROM articles WHERE lower(original_url) LIKE lower(?)",
+                (broken_mers_url,),
+            )
+            print(
+                f"[WARN] Removed {len(stale_rows)} stale record(s) with the known broken MERS URL. "
+                "They will only return if a verified source is found.",
+                flush=True,
+            )
+
     new_count = 0
     sources = load_sources()
 
