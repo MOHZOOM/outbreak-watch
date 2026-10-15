@@ -315,15 +315,24 @@ def extract_web_page(url):
 
 def collect_once():
     """Collect, classify, deduplicate, and save articles from enabled sources."""
+    print("[INFO] Collector started", flush=True)
     init_db()
     new_count = 0
 
-    for source in load_sources():
+    sources = load_sources()
+    print(f"[INFO] Loaded {len(sources)} configured sources", flush=True)
+
+    for source in sources:
         if not source.get("enabled"):
             continue
 
         source_name = source.get("name", "Unknown source")
         source_type = source.get("type")
+        print(
+            f"[INFO] Checking source: {source_name} "
+            f"(type={source_type}, enabled={source.get('enabled')})",
+            flush=True,
+        )
 
         try:
             if source_type == "rss":
