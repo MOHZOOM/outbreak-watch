@@ -19,8 +19,8 @@
     "enabled": true
   },
   {
-    "name": "CDC Outbreaks RSS",
-    "url": "https://tools.cdc.gov/api/v2/resources/media/281321.rss",
+    "name": "ECDC Epidemiological Updates",
+    "url": "https://www.ecdc.europa.eu/en/taxonomy/term/1310/feed",
     "type": "rss",
     "enabled": true
   }
