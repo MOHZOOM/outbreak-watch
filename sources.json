@@ -2,7 +2,7 @@
 [
   {
     "name": "WHO Disease Outbreak News",
-    "url": "https://cms.who.int/api/hubs/diseaseoutbreaknews",
+    "url": "https://cms.who.int/api/hubs/diseaseoutbreaknews?$orderby=PublicationDate%20desc&$top=100",
     "type": "who_api",
     "enabled": true
   },
