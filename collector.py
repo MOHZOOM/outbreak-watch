@@ -660,6 +660,155 @@ def extract_web_page(url):
     return results
 
 
+
+def extract_with_scrapegraphai(listing_url):
+    """Use ScrapeGraphAI to discover candidate articles, then verify them with HTML metadata.
+
+    This is optional and enabled with SCRAPEGRAPHAI_ENABLED=true. ScrapeGraphAI's
+    extracted dates are never trusted by themselves; each candidate article page
+    must provide a verifiable publication date from its HTML metadata.
+    """
+    if os.getenv("SCRAPEGRAPHAI_ENABLED", "false").strip().lower() not in {
+        "1", "true", "yes", "on"
+    }:
+        return []
+
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_APIKEY")
+    if not api_key:
+        print(
+            "[WARN] ScrapeGraphAI is enabled but OPENAI_API_KEY/OPENAI_APIKEY is missing; "
+            "skipping AI-assisted scraping.",
+            flush=True,
+        )
+        return []
+
+    try:
+        from scrapegraphai.graphs import SmartScraperGraph
+    except ImportError:
+        print(
+            "[WARN] ScrapeGraphAI is enabled but scrapegraphai is not installed.",
+            flush=True,
+        )
+        return []
+
+    model = os.getenv("SCRAPEGRAPHAI_MODEL", "openai/gpt-4o-mini")
+    prompt = """
+    Extract candidate outbreak-news articles linked from this official health website.
+    Return JSON with an 'articles' array. Each item must contain:
+    title (string), url (absolute article URL), and short_description (string).
+    Include only links to individual news/report articles on the same website.
+    Do not invent titles or URLs. Do not infer or invent publication dates.
+    """
+
+    try:
+        graph = SmartScraperGraph(
+            prompt=prompt,
+            source=listing_url,
+            config={
+                "llm": {
+                    "api_key": api_key,
+                    "model": model,
+                    "temperature": 0,
+                },
+                "verbose": False,
+                "headless": True,
+            },
+        )
+        extracted = graph.run()
+    except Exception as exc:
+        print(f"[WARN] ScrapeGraphAI failed for {listing_url}: {exc}", flush=True)
+        return []
+
+    if isinstance(extracted, dict):
+        candidates = extracted.get("articles", [])
+    elif isinstance(extracted, list):
+        candidates = extracted
+    else:
+        candidates = []
+
+    listing_host = (urlsplit(listing_url).hostname or "").lower()
+    allowed_hosts = {listing_host}
+    if listing_host.startswith("www."):
+        allowed_hosts.add(listing_host[4:])
+    else:
+        allowed_hosts.add("www." + listing_host)
+
+    results = []
+    seen = set()
+    for item in candidates[:MAX_ENTRIES_PER_SOURCE]:
+        if not isinstance(item, dict):
+            continue
+        title = " ".join(str(item.get("title") or "").split())
+        candidate_url = str(item.get("url") or item.get("link") or "").strip()
+        if not title or not candidate_url:
+            continue
+
+        absolute_url = urljoin(listing_url, candidate_url)
+        parts = urlsplit(absolute_url)
+        if parts.scheme not in {"http", "https"} or (parts.hostname or "").lower() not in allowed_hosts:
+            print(f"[WARN] ScrapeGraphAI candidate rejected (off-site URL): {absolute_url}", flush=True)
+            continue
+
+        link = canonical_url(absolute_url)
+        if link in seen or link == canonical_url(listing_url):
+            continue
+        seen.add(link)
+
+        try:
+            response = fetch_page(link)
+            soup = BeautifulSoup(response.text, "html.parser")
+        except requests.RequestException as exc:
+            print(f"[WARN] ScrapeGraphAI candidate URL failed: {link}: {exc}", flush=True)
+            continue
+
+        # A HTTP 200 page can still be a publisher's not-found page.
+        page_text = " ".join(soup.get_text(" ", strip=True).lower().split())[:5000]
+        if any(marker in page_text for marker in (
+            "page cannot be found", "this page cannot be found", "page not found", "404 not found"
+        )):
+            print(f"[WARN] ScrapeGraphAI candidate rejected (not-found page): {link}", flush=True)
+            continue
+
+        verified_date = extract_page_date(soup)
+        if not is_2026_report(verified_date):
+            print(
+                f"[DEBUG] ScrapeGraphAI candidate rejected; verified page date is not 2026: "
+                f"title={title!r}; date={verified_date!r}; url={link}",
+                flush=True,
+            )
+            continue
+
+        heading = soup.find(["h1", "h2"])
+        if heading:
+            heading_text = " ".join(heading.get_text(" ", strip=True).split())
+            if len(heading_text) >= 8:
+                title = heading_text
+
+        desc = item.get("short_description") or item.get("description") or ""
+        if not desc:
+            meta = soup.find("meta", attrs={"name": "description"}) or soup.find(
+                "meta", attrs={"property": "og:description"}
+            )
+            if meta:
+                desc = meta.get("content", "")
+
+        if not any(word in (title + " " + str(desc)).lower() for word in OUTBREAK_KEYWORDS):
+            continue
+
+        results.append({
+            "title": title[:500],
+            "link": link,
+            "description": str(desc)[:5000],
+            "published": verified_date,
+        })
+
+    print(
+        f"[INFO] ScrapeGraphAI verified {len(results)} dated 2026 articles "
+        f"from {listing_host}",
+        flush=True,
+    )
+    return results
+
 def collect_once():
     """Collect only reports published in 2026."""
     print(
@@ -715,7 +864,16 @@ def collect_once():
                 entries = extract_who_api(source["url"])
 
             elif source_type == "web_scrape":
+                # Keep deterministic HTML scraping as the baseline. When enabled,
+                # ScrapeGraphAI contributes additional candidates that are verified
+                # against the real article page before they can be stored.
                 entries = extract_web_page(source["url"])
+                sg_entries = extract_with_scrapegraphai(source["url"])
+                known_links = {canonical_url(entry.get("link", "")) for entry in entries}
+                entries.extend(
+                    entry for entry in sg_entries
+                    if canonical_url(entry.get("link", "")) not in known_links
+                )
 
             elif source_type == "rss":
                 feed = feedparser.parse(
