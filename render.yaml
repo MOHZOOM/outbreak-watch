@@ -1,17 +1,16 @@
 services:
   - type: web
     name: outbreak-watch
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --workers 1 --threads 4 --timeout 120 app:app
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.11
       - key: FLASK_SECRET_KEY
         generateValue: true
       - key: DATABASE_PATH
         value: outbreak_watch.db
       - key: AI_ENABLED
-        value: "false"
+        value: "true"
+      - key: OPENAI_API_KEY
+        sync: false
