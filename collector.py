@@ -737,6 +737,32 @@ def _links_from_markdown(text):
     return items
 
 
+def _date_near_link(text, title):
+    """Look for a visible date right after (or just before) a link's title."""
+    i = text.find(title)
+    if i < 0:
+        return ""
+
+    # Text between the end of this link and the start of the next one.
+    end = text.find(")", i + len(title))
+    if end >= 0:
+        nxt = text.find("[", end)
+        after = text[end + 1: nxt if nxt >= 0 else end + 300][:200]
+        found = parse_date(after) if after.strip() else ""
+        if found:
+            return found
+
+    # Text between the end of the previous link and the start of this one.
+    prev_end = text.rfind(")", 0, i)
+    if prev_end >= 0:
+        before = text[prev_end + 1: i][:200]
+        found = parse_date(before) if before.strip() else ""
+        if found:
+            return found
+
+    return ""
+
+
 def extract_ai_scrape(url):
     """Use ScrapeGraphAI to read a listing page, then verify every link."""
     if not allowed_by_robots(url):
@@ -798,26 +824,58 @@ def extract_ai_scrape(url):
 
     results = []
     seen = set()
+    stats = {
+        "other_host": 0, "robots": 0, "not_verified": 0,
+        "no_date": 0, "not_2026": 0, "not_relevant": 0,
+    }
+    shown = 0
 
     for item in items[:MAX_ENTRIES_PER_SOURCE]:
         title = str(item.get("title") or "").strip()
         link = canonical_url(urljoin(url, str(item.get("url") or "")))
         host = (urlsplit(link).hostname or "").lower().removeprefix("www.")
 
-        if not title or not link or link in seen or host != source_host:
+        if not title or not link or link in seen:
             continue
         seen.add(link)
 
+        if host != source_host:
+            stats["other_host"] += 1
+            continue
+
         if not allowed_by_robots(link):
+            stats["robots"] += 1
             continue
 
         # Never trust the LLM's link or date: verify on the real page.
         verified_link, page_date = verify_article_url(link)
         if not verified_link:
+            stats["not_verified"] += 1
             continue
 
-        published = page_date or parse_date(item.get("published_date"))
+        # Date priority: the article page itself, then the listing page.
+        listing_date = _date_near_link(text, title) if text else ""
+        published = (
+            page_date
+            or parse_date(item.get("published_date"))
+            or listing_date
+        )
+
+        if not published:
+            stats["no_date"] += 1
+            if shown < 3:
+                shown += 1
+                i = text.find(title)
+                context = text[max(0, i - 150): i + len(title) + 250] if i >= 0 else ""
+                print(
+                    f"[DEBUG] No date found for {title!r}; "
+                    f"page_date={page_date!r}; listing context={context!r}",
+                    flush=True,
+                )
+            continue
+
         if not is_2026_report(published):
+            stats["not_2026"] += 1
             continue
 
         description = ""
@@ -837,18 +895,20 @@ def extract_ai_scrape(url):
             + description[:1500]
         ).lower()
         if not any(word in relevant_text for word in OUTBREAK_KEYWORDS):
+            stats["not_relevant"] += 1
             continue
 
         results.append({
             "title": title[:500],
             "link": canonical_url(verified_link),
             "description": description[:5000],
-            "published": published,
+            "published": parse_date(published),
         })
 
     print(
         f"[INFO] ScrapeGraphAI found {len(items)} items; "
-        f"{len(results)} verified 2026 reports from {source_host}",
+        f"{len(results)} verified 2026 reports from {source_host}; "
+        f"skipped: {stats}",
         flush=True,
     )
     return results
