@@ -689,6 +689,106 @@ def extract_web_page(url):
     return results
 
 
+def _find_item_list(data):
+    """Find the first list of dicts inside whatever shape the LLM returned."""
+    if isinstance(data, list):
+        if data and all(isinstance(x, dict) for x in data):
+            return data
+        for x in data:
+            found = _find_item_list(x)
+            if found:
+                return found
+    elif isinstance(data, dict):
+        for value in data.values():
+            found = _find_item_list(value)
+            if found:
+                return found
+    return []
+
+
+def extract_ai_scrape(url):
+    """Use ScrapeGraphAI to read a listing page, then verify every link."""
+    if not allowed_by_robots(url):
+        raise requests.RequestException(f"Blocked by robots.txt: {url}")
+
+    # Imported here so the app still starts if the library is missing.
+    from scrapegraphai.graphs import SmartScraperGraph
+
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    if "/" not in model:
+        model = f"openai/{model}"
+
+    graph = SmartScraperGraph(
+        prompt=(
+            "List every outbreak, emergency or public health news item on "
+            "this page. Return JSON with key 'articles', a list of objects "
+            "with: title, url (absolute link), published_date (YYYY-MM-DD "
+            "or null). Do not guess missing values."
+        ),
+        source=url,
+        config={
+            "llm": {
+                "api_key": os.getenv("OPENAI_API_KEY"),
+                "model": model,
+            },
+            "verbose": False,
+            "headless": True,
+        },
+    )
+
+    items = _find_item_list(graph.run())
+    source_host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
+
+    results = []
+    seen = set()
+
+    for item in items[:MAX_ENTRIES_PER_SOURCE]:
+        title = str(item.get("title") or "").strip()
+        link = canonical_url(urljoin(url, str(item.get("url") or "")))
+        host = (urlsplit(link).hostname or "").lower().removeprefix("www.")
+
+        if not title or not link or link in seen or host != source_host:
+            continue
+        seen.add(link)
+
+        if not allowed_by_robots(link):
+            continue
+
+        # Never trust the LLM's link or date: verify on the real page.
+        verified_link, page_date = verify_article_url(link)
+        if not verified_link:
+            continue
+
+        published = page_date or parse_date(item.get("published_date"))
+        if not is_2026_report(published):
+            continue
+
+        description = ""
+        try:
+            page = BeautifulSoup(fetch_page(verified_link).text, "html.parser")
+            tag = (
+                page.find("meta", attrs={"name": "description"})
+                or page.find("meta", attrs={"property": "og:description"})
+            )
+            description = tag.get("content", "") if tag else ""
+        except requests.RequestException:
+            pass
+
+        results.append({
+            "title": title[:500],
+            "link": canonical_url(verified_link),
+            "description": description[:5000],
+            "published": published,
+        })
+
+    print(
+        f"[INFO] ScrapeGraphAI found {len(items)} items; "
+        f"{len(results)} verified 2026 reports from {source_host}",
+        flush=True,
+    )
+    return results
+
+
 def collect_once():
     """Collect only reports published in 2026."""
     print(
@@ -748,6 +848,11 @@ def collect_once():
                 # and individual article pages. No browser or AI scraping package.
                 # fetch_page() checks robots.txt before every request.
                 entries = extract_web_page(source["url"])
+
+            elif source_type == "ai_scrape":
+                # ScrapeGraphAI (LLM-based) reads the listing page; every
+                # link and date is then verified with ordinary requests.
+                entries = extract_ai_scrape(source["url"])
 
             elif source_type == "rss":
                 feed = feedparser.parse(
