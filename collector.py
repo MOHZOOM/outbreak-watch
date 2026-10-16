@@ -722,6 +722,21 @@ def _make_article_schema():
     return Articles
 
 
+def _links_from_markdown(text):
+    """Fallback: pull article-like links out of the page text ScrapeGraphAI fetched."""
+    image_ends = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp")
+    items = []
+    for title, href in re.findall(r"\[([^\]\n]{25,250})\]\(([^)\s]+)\)", text):
+        title = " ".join(title.split())
+        path = urlsplit(href).path.lower()
+        if "![" in title or title.startswith("!"):
+            continue  # image markup, not an article title
+        if path.endswith(image_ends):
+            continue
+        items.append({"title": title, "url": href, "published_date": None})
+    return items
+
+
 def extract_ai_scrape(url):
     """Use ScrapeGraphAI to read a listing page, then verify every link."""
     if not allowed_by_robots(url):
@@ -758,27 +773,27 @@ def extract_ai_scrape(url):
     )
 
     raw = graph.run()
-    # Temporary diagnostics: what ScrapeGraphAI returned and what page it saw.
     print(
-        f"[DEBUG] ScrapeGraphAI raw result: {str(raw)[:1500]}",
+        f"[DEBUG] ScrapeGraphAI raw result: {str(raw)[:500]}",
         flush=True,
     )
+
+    # Page text that ScrapeGraphAI's browser fetched (markdown with links).
     try:
         fetched = graph.get_state("doc")
         text = fetched[0].page_content if fetched else ""
-        print(
-            f"[DEBUG] ScrapeGraphAI fetched {len(text)} characters",
-            flush=True,
-        )
-        long_links = re.findall(r"\[([^\]\n]{30,200})\]\(([^)\s]+)\)", text)
-        print(
-            f"[DEBUG] Article-like links in fetched page: {len(long_links)}; "
-            f"first 8: {long_links[:8]!r}",
-            flush=True,
-        )
     except Exception as exc:
+        text = ""
         print(f"[DEBUG] Could not read fetched page: {exc}", flush=True)
+
     items = _find_item_list(raw)
+    if not items and text:
+        items = _links_from_markdown(text)
+        print(
+            f"[INFO] ScrapeGraphAI's AI step returned no items; using "
+            f"{len(items)} links parsed from the page it fetched",
+            flush=True,
+        )
     source_host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
 
     results = []
@@ -815,6 +830,14 @@ def extract_ai_scrape(url):
             description = tag.get("content", "") if tag else ""
         except requests.RequestException:
             pass
+
+        # Same relevance filter as the plain HTML scraper.
+        relevant_text = (
+            title + " " + urlsplit(verified_link).path + " "
+            + description[:1500]
+        ).lower()
+        if not any(word in relevant_text for word in OUTBREAK_KEYWORDS):
+            continue
 
         results.append({
             "title": title[:500],
