@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, urljoin
+from urllib.robotparser import RobotFileParser
 
 import feedparser
 import requests
@@ -65,7 +66,35 @@ def load_sources():
     )
 
 
+_robots_cache = {}
+
+
+def allowed_by_robots(url):
+    """Return True if the site's robots.txt allows us to fetch this URL."""
+    parts = urlsplit(url)
+    base = f"{parts.scheme}://{parts.netloc}"
+
+    parser = _robots_cache.get(base)
+    if parser is None:
+        parser = RobotFileParser()
+        try:
+            r = requests.get(
+                base + "/robots.txt",
+                headers={"User-Agent": USER_AGENT},
+                timeout=REQUEST_TIMEOUT,
+            )
+            parser.parse(r.text.splitlines() if r.status_code == 200 else [])
+        except requests.RequestException:
+            parser.parse([])
+        _robots_cache[base] = parser
+
+    return parser.can_fetch("OutbreakWatchMVP", url)
+
+
 def fetch_page(url):
+    if not allowed_by_robots(url):
+        raise requests.RequestException(f"Blocked by robots.txt: {url}")
+
     response = requests.get(
         url,
         headers={"User-Agent": USER_AGENT},
@@ -660,8 +689,6 @@ def extract_web_page(url):
     return results
 
 
-
-
 def collect_once():
     """Collect only reports published in 2026."""
     print(
@@ -719,6 +746,7 @@ def collect_once():
             elif source_type == "web_scrape":
                 # Use ordinary HTTP requests + BeautifulSoup to scrape the listing
                 # and individual article pages. No browser or AI scraping package.
+                # fetch_page() checks robots.txt before every request.
                 entries = extract_web_page(source["url"])
 
             elif source_type == "rss":
