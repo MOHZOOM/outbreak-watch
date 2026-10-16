@@ -6,6 +6,12 @@
     "enabled": true
   },
   {
+    "name": "WHO AFRO Emergencies and Outbreaks (ScrapeGraphAI)",
+    "url": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
+    "type": "ai_scrape",
+    "enabled": true
+  },
+  {
     "name": "WHO AFRO Emergencies and Outbreaks",
     "url": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
     "type": "web_scrape",
