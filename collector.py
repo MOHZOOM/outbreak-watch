@@ -736,7 +736,13 @@ def extract_ai_scrape(url):
         },
     )
 
-    items = _find_item_list(graph.run())
+    raw = graph.run()
+    # Temporary diagnostic: shows what ScrapeGraphAI actually returned.
+    print(
+        f"[DEBUG] ScrapeGraphAI raw result: {str(raw)[:1500]}",
+        flush=True,
+    )
+    items = _find_item_list(raw)
     source_host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
 
     results = []
