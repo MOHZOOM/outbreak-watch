@@ -15,7 +15,7 @@
     "name": "WHO AFRO Emergencies RSS",
     "url": "https://afro.who.int/rss/emergencies.xml",
     "type": "rss",
-    "enabled": true
+    "enabled": false
   },
   {
     "name": "ECDC Epidemiological Updates",
