@@ -720,10 +720,12 @@ def extract_ai_scrape(url):
 
     graph = SmartScraperGraph(
         prompt=(
-            "List every outbreak, emergency or public health news item on "
-            "this page. Return JSON with key 'articles', a list of objects "
-            "with: title, url (absolute link), published_date (YYYY-MM-DD "
-            "or null). Do not guess missing values."
+            "Extract every news, update or report link shown in the main "
+            "content of this page (ignore menus, footers and social links). "
+            "Return JSON with key 'articles': a list of objects with "
+            "'title', 'url' (the full link) and 'published_date' "
+            "(YYYY-MM-DD, or null if the date is not shown). Include an "
+            "item even when its date is missing."
         ),
         source=url,
         config={
@@ -737,11 +739,21 @@ def extract_ai_scrape(url):
     )
 
     raw = graph.run()
-    # Temporary diagnostic: shows what ScrapeGraphAI actually returned.
+    # Temporary diagnostics: what ScrapeGraphAI returned and what page it saw.
     print(
         f"[DEBUG] ScrapeGraphAI raw result: {str(raw)[:1500]}",
         flush=True,
     )
+    try:
+        fetched = graph.get_state("doc")
+        text = fetched[0].page_content if fetched else ""
+        print(
+            f"[DEBUG] ScrapeGraphAI fetched {len(text)} characters; "
+            f"preview: {text[:600]!r}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"[DEBUG] Could not read fetched page: {exc}", flush=True)
     items = _find_item_list(raw)
     source_host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
 
