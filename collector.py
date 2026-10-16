@@ -188,14 +188,17 @@ def parse_date(value):
         except ValueError:
             continue
 
+    # Month names, full or abbreviated ("October", "Oct", "Sept.").
+    month = (
+        r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+        r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?"
+    )
+
     patterns = (
         r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b",
-        r"\b(\d{1,2})\s+"
-        r"(January|February|March|April|May|June|July|August|"
-        r"September|October|November|December)\s+(20\d{2})\b",
-        r"\b(January|February|March|April|May|June|July|August|"
-        r"September|October|November|December)\s+"
-        r"(\d{1,2}),?\s+(20\d{2})\b"
+        r"\b(\d{1,2})\s+" + month + r"\s+(20\d{2})\b",
+        r"\b" + month + r"\s+(\d{1,2}),?\s+(20\d{2})\b",
     )
 
     for pattern in patterns:
@@ -204,7 +207,8 @@ def parse_date(value):
             continue
 
         try:
-            matched = match.group(0).replace(",", "")
+            matched = match.group(0).replace(",", "").replace(".", "")
+            matched = re.sub(r"\bSept\b", "Sep", matched, flags=re.IGNORECASE)
             if re.match(r"20\d{2}[-/]", matched):
                 matched = matched.replace("/", "-")
                 parts = matched.split("-")
@@ -739,28 +743,29 @@ def _links_from_markdown(text):
 
 def _date_near_link(text, title):
     """Look for a visible date right after (or just before) a link's title."""
-    i = text.find(title)
-    if i < 0:
-        return ""
+    start = 0
+    while True:
+        i = text.find(title, start)
+        if i < 0:
+            return ""
+        start = i + 1
 
-    # Text between the end of this link and the start of the next one.
-    end = text.find(")", i + len(title))
-    if end >= 0:
-        nxt = text.find("[", end)
-        after = text[end + 1: nxt if nxt >= 0 else end + 300][:200]
-        found = parse_date(after) if after.strip() else ""
-        if found:
-            return found
+        # Text between the end of this link and the start of the next one.
+        end = text.find(")", i + len(title))
+        if end >= 0:
+            nxt = text.find("[", end)
+            after = text[end + 1: nxt if nxt >= 0 else end + 300][:200]
+            found = parse_date(after) if after.strip() else ""
+            if found:
+                return found
 
-    # Text between the end of the previous link and the start of this one.
-    prev_end = text.rfind(")", 0, i)
-    if prev_end >= 0:
-        before = text[prev_end + 1: i][:200]
-        found = parse_date(before) if before.strip() else ""
-        if found:
-            return found
-
-    return ""
+        # Text between the end of the previous link and the start of this one.
+        prev_end = text.rfind(")", 0, i)
+        if prev_end >= 0:
+            before = text[prev_end + 1: i][:200]
+            found = parse_date(before) if before.strip() else ""
+            if found:
+                return found
 
 
 def extract_ai_scrape(url):
