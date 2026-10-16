@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, urljoin
 from urllib.robotparser import RobotFileParser
+from typing import List, Optional
 
 import feedparser
 import requests
@@ -706,6 +707,21 @@ def _find_item_list(data):
     return []
 
 
+def _make_article_schema():
+    """Pydantic schema that forces ScrapeGraphAI to return a list of articles."""
+    from pydantic import BaseModel
+
+    class Article(BaseModel):
+        title: str
+        url: str
+        published_date: Optional[str] = None
+
+    class Articles(BaseModel):
+        articles: List[Article]
+
+    return Articles
+
+
 def extract_ai_scrape(url):
     """Use ScrapeGraphAI to read a listing page, then verify every link."""
     if not allowed_by_robots(url):
@@ -720,14 +736,17 @@ def extract_ai_scrape(url):
 
     graph = SmartScraperGraph(
         prompt=(
-            "Extract every news, update or report link shown in the main "
-            "content of this page (ignore menus, footers and social links). "
-            "Return JSON with key 'articles': a list of objects with "
-            "'title', 'url' (the full link) and 'published_date' "
-            "(YYYY-MM-DD, or null if the date is not shown). Include an "
-            "item even when its date is missing."
+            "This is a listing page of WHO AFRO news, outbreak updates and "
+            "reports. Return every link whose text is the title of a news "
+            "item, update, bulletin or report (titles are usually full "
+            "sentences). Skip navigation menus, topic lists, language "
+            "links and footer links. For each, give the title, the link "
+            "exactly as shown, and the published date in YYYY-MM-DD if it "
+            "is shown, otherwise null. Include items even when the date "
+            "is missing."
         ),
         source=url,
+        schema=_make_article_schema(),
         config={
             "llm": {
                 "api_key": os.getenv("OPENAI_API_KEY"),
@@ -748,8 +767,13 @@ def extract_ai_scrape(url):
         fetched = graph.get_state("doc")
         text = fetched[0].page_content if fetched else ""
         print(
-            f"[DEBUG] ScrapeGraphAI fetched {len(text)} characters; "
-            f"preview: {text[:600]!r}",
+            f"[DEBUG] ScrapeGraphAI fetched {len(text)} characters",
+            flush=True,
+        )
+        long_links = re.findall(r"\[([^\]\n]{30,200})\]\(([^)\s]+)\)", text)
+        print(
+            f"[DEBUG] Article-like links in fetched page: {len(long_links)}; "
+            f"first 8: {long_links[:8]!r}",
             flush=True,
         )
     except Exception as exc:
