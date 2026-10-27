@@ -1,70 +1,171 @@
-# Outbreak Watch — MVP Starter
+# Outbreak Watch
 
-A small, source-first website for collecting, classifying, summarizing, and archiving public outbreak-investigation news.
+**Outbreak Watch** is a small, source-first website that automatically collects public outbreak and public-health news from official sources, classifies it, and keeps a searchable archive, always linking back to the original report.
 
-## What this starter includes
-- Flask website with **Latest News** and **Archive** pages.
-- SQLite storage for collected items.
-- RSS ingestion with a configurable source list.
-- Optional OpenAI API processing for relevance, structured fields, and short summaries.
-- Basic duplicate detection using normalized URLs and title similarity.
-- Search and filters for country, disease/event, category, and date.
-- Original source name and original URL retained and displayed on every item.
-- Sample/demo records are clearly marked as examples; they are not presented as verified current news.
+It is built for people who want one place to see what WHO, ECDC and similar bodies have published about outbreaks, without having to check each site separately.
 
-## Recommended first-version architecture
-1. **Collection:** The starter supports RSS/Atom feeds and the documented WHO Disease Outbreak News JSON endpoint. Add other official APIs and carefully scoped HTML parsers only where feeds are unavailable.
-2. **Normalization:** Convert each item to a common schema and retain the publisher's title, publication date, source name, and original URL.
-3. **Deduplication:** Exact canonical URL first, then normalized-title similarity. Keep multiple source links when reports concern the same event.
-4. **AI triage:** Run a low-cost model only on new/changed items. Return structured JSON: relevance, disease/event, country/region, event date, outbreak status, category, and a concise summary. Do not let AI invent missing facts; use `Unknown` where needed.
-5. **Persistence:** Store raw metadata, extracted text where permitted, AI fields, timestamps, and processing status in SQLite for the MVP; move to PostgreSQL for production.
-6. **Review and publication:** In the MVP, display automatically processed results with source attribution and an explicit note that summaries are machine-generated. Add a human review queue before any operational/public-health use.
-7. **Scheduling and hosting:** Run ingestion on a scheduled worker (e.g., every 30–60 minutes) rather than on a web-page request.
+> ⚠️ **This is an MVP / demonstration project**, not a validated public-health surveillance system. Classifications and summaries can be wrong. The original source linked on every item is always the authoritative version.
 
-## Run locally
-Python 3.11+ recommended.
+---
+
+## What it does
+
+- **Collects** reports on a schedule (every 30 minutes by default) from official sources: WHO Disease Outbreak News, WHO AFRO and ECDC.
+- **Verifies** every link before saving it: the page must actually load, and its publication date is cross-checked on the article page itself.
+- **Filters** to reports published in the current year (2026) and to outbreak-related content.
+- **Classifies** each report by category, disease/event, country/region and outbreak status, and writes a short neutral summary when AI is enabled.
+- **Removes duplicates** by URL and by near-identical titles.
+- **Displays** everything on two pages:
+  - **Latest News** – the most recent reports
+  - **Archive** – everything collected so far
+- **Search and filters** by keyword, country/region, disease/event and category.
+
+Every item shows its original source name and a link to the original report. The site never invents sample news: if nothing has been collected, it says so.
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Official sources<br/>WHO API · WHO AFRO · ECDC RSS] --> B[Collector<br/>collector.py]
+    B --> C[Verify link<br/>and publication date]
+    C --> D[Keep 2026 +<br/>outbreak-related only]
+    D --> E[Deduplicate<br/>URL + title similarity]
+    E --> F[Classify & summarize<br/>ai_processor.py]
+    F --> G[(SQLite database)]
+    G --> H[Flask website<br/>Latest · Archive]
+```
+
+1. **Collection** – `collector.py` reads each enabled source in `sources.json`. Four source types are supported:
+
+   | Type | How it works |
+   |---|---|
+   | `who_api` | Reads WHO's Disease Outbreak News JSON API |
+   | `rss` | Reads a standard RSS/Atom feed |
+   | `web_scrape` | Reads a listing page with Requests + BeautifulSoup, then opens each article |
+   | `ai_scrape` | Uses [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai) (an LLM) to read a listing page; every link and date it returns is then checked on the real page |
+
+   Scrapers respect each site's `robots.txt` and only follow links on the source's own domain.
+
+2. **Verification** – Links are opened before saving. Broken pages, including "page not found" pages that still return HTTP 200, are skipped. When the article page shows its own publication date, that date is used instead of the feed's date.
+
+3. **Classification** – `ai_processor.py` sorts each report into one of:
+   *Outbreak investigation · Emerging public health threat · Official public health update · Research / surveillance · Not relevant.*
+   - **With AI enabled:** an OpenAI model returns structured fields and a summary of up to 55 words. It is instructed to use only facts stated in the source and to write `Unknown` rather than guess.
+   - **Without AI:** simple keyword rules decide relevance and pick out the country where possible. No summary is generated, so nothing is invented.
+
+4. **Storage and display** – Results are stored in SQLite (`schema.sql`) and served by a Flask app (`app.py`).
+
+---
+
+## Project structure
+
+```
+outbreak-watch/
+├── app.py              # Flask website + background collection loop
+├── collector.py        # Fetching, scraping, verification, dedup, saving
+├── ai_processor.py     # AI classification/summary with keyword fallback
+├── sources.json        # List of sources (enable/disable here)
+├── schema.sql          # Database table definition
+├── templates/          # HTML pages (base, latest, archive)
+├── static/style.css    # Styling
+├── requirements.txt    # Python dependencies
+├── Dockerfile          # Container image (includes Chromium for ScrapeGraphAI)
+├── render.yaml         # One-click deployment config for Render
+└── Procfile            # Process definition for Procfile-based hosts
+```
+
+---
+
+## Run it locally
+
+Requires **Python 3.11+**.
 
 ```bash
+git clone https://github.com/MOHZOOM/outbreak-watch.git
+cd outbreak-watch
+
 python -m venv .venv
-source .venv/bin/activate        # macOS/Linux
-# .venv\\Scripts\\activate       # Windows
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
+playwright install chromium        # only needed for ai_scrape sources
+
 python app.py
 ```
 
-Open http://127.0.0.1:5000
+Then open <http://127.0.0.1:5000>.
 
-The website can run without an AI key; the fallback rules label the item using keyword heuristics and leave the summary blank rather than fabricate one.
+The first collection starts automatically when the app starts. To run one collection by hand without the website:
 
-## Configure AI (optional)
-1. Create an API key in the provider account and enable billing/usage limits.
-2. Copy it into `.env` as `OPENAI_API_KEY=...`.
-3. Set `OPENAI_MODEL` to a currently available, cost-effective model in your account.
-4. Never commit `.env` or expose the API key in frontend JavaScript.
+```bash
+python collector.py
+```
 
-The code calls the OpenAI Responses API from the server. Confirm model availability and pricing in the official pricing page before deployment: https://developers.openai.com/api/docs/pricing
+### Configuration
 
-## Configure sources
-The default configuration uses WHO's documented Disease Outbreak News JSON endpoint (`https://cms.who.int/api/news/diseaseoutbreaknews`). WHO documents the endpoint and its fields here: https://cms.who.int/api/news/diseaseoutbreaknews/sfhelp. The optional WHO AFRO entry is disabled because its page is a feed directory, not a verified feed URL. Edit `sources.json` to add exact verified feed endpoints. Prefer official sources and feeds with clear reuse terms. Confirm the feed URL, terms of use, rate limits, and attribution requirements before production. Some publishers provide only web pages or newsletters; do not scrape pages that disallow automated access.
+Settings are read from environment variables, or from a `.env` file in the project folder. Never commit that file.
 
-## MVP scope and limitations
-- This is a development starter, not a validated public-health surveillance system.
-- RSS availability and publisher metadata vary; location, disease, and outbreak status may be missing.
-- AI classifications and summaries can be wrong. The original link is the authoritative source.
-- The demo parser uses feed-provided titles/descriptions only; it does not bypass paywalls or scrape full articles.
-- Before public launch, add tests, logging/monitoring, backups, rate limiting, accessibility review, privacy/security checks, and a human verification workflow.
+| Variable | Default | Purpose |
+|---|---|---|
+| `AI_ENABLED` | `false` | Set to `true` to use OpenAI for classification and summaries |
+| `OPENAI_API_KEY` | – | Needed for AI classification and `ai_scrape` sources |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Model used for classification and scraping |
+| `DATABASE_PATH` | `outbreak_watch.db` | Where the SQLite database is stored |
+| `COLLECTION_INTERVAL_SECONDS` | `1800` | Time between collection runs (30 min) |
+| `DISABLE_SCHEDULER` | `false` | Set to `true` to stop automatic collection |
+| `FLASK_SECRET_KEY` | dev value | Set a random value in production |
+| `PORT` | `5000` | Port for the local server |
 
+Example `.env`:
 
-## Deploy to Render (supervisor demo)
-- Push the contents of this project folder to a GitHub repository.
-- In Render, create a new Blueprint and select the repository; Render reads `render.yaml`.
-- The included Blueprint uses a small persistent disk mounted at `/var/data` for the SQLite archive. Persistent disks may require a paid Render plan; check current Render pricing before deploying.
-- The web process runs one Gunicorn worker and a simple in-process collection loop, which attempts to collect on startup and every 30 minutes while the service is running. On hosting plans that sleep, collection pauses while the service sleeps.
-- AI is disabled by default. To enable it, set `AI_ENABLED=true` and add `OPENAI_API_KEY` as a secret environment variable in Render. Confirm current model availability and set `OPENAI_MODEL` as needed.
-- Verify that live WHO records appear, then test the archive and original links. API field formats and availability can change, so check Render logs if collection fails.
-- This is an MVP demonstration setup. For reliable production use, replace the in-process loop with a dedicated worker/scheduler and use a shared managed database; add monitoring, tests, source terms review, and human review.
+```env
+AI_ENABLED=true
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+```
 
+The site works without an API key. It falls back to keyword rules, and any source of type `ai_scrape` will simply fail and be skipped.
 
-### Free demo deployment (temporary archive)
-The included `render.yaml` uses Render's Free web-service plan so you can try the site without choosing a paid compute plan. Free services have an ephemeral filesystem and may spin down after inactivity; SQLite archive data can be lost after restart/redeploy/spin-down. This is suitable only for an initial demo. For a reliable archive, choose a paid service with a persistent disk or use a managed database after approving the cost. Review current limits: https://render.com/docs/free
+### Adding or changing sources
+
+Edit `sources.json`:
+
+```json
+{
+  "name": "ECDC Epidemiological Updates",
+  "url": "https://www.ecdc.europa.eu/en/taxonomy/term/1310/feed",
+  "type": "rss",
+  "enabled": true
+}
+```
+
+Prefer official sources with an RSS feed or API. Before adding a site, check its terms of use and `robots.txt`, and don't scrape sites that disallow automated access.
+
+---
+
+## Deploy to Render
+
+The repository includes a `render.yaml` blueprint.
+
+1. In [Render](https://render.com), create a **New → Blueprint** and select this repository.
+2. Add `OPENAI_API_KEY` as a secret environment variable (AI is enabled in the blueprint).
+3. Deploy, then check the logs to confirm reports are being collected.
+
+**Note on the free plan:** free Render services have a temporary filesystem and go to sleep when idle. The archive can be lost on restart or redeploy, and collection pauses while the service sleeps. That's fine for a demo. For a lasting archive, use a paid plan with a persistent disk or a managed database.
+
+---
+
+## Limitations and next steps
+
+- Only reports dated **2026** are kept (`CURRENT_YEAR` in `collector.py`).
+- Source metadata varies, so location, disease or status may show as `Unknown`.
+- AI classifications and summaries can be wrong; always check the original report.
+- Collection runs inside the web process, so only one Gunicorn worker is used.
+
+Before any real public-health use, the plan is to add:
+
+- a human review step before items are published
+- a dedicated scheduled worker and a PostgreSQL database
+- tests, monitoring, backups and rate limiting
+- more official sources, and an accessibility and security review
