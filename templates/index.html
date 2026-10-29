@@ -1,28 +1,40 @@
 {% extends "base.html" %}
 {% block title %}Latest News · Outbreak Watch{% endblock %}
-{% block heading %}Latest outbreak news{% endblock %}
 {% block content %}
-<form class="filters" action="/" method="get">
-  <input name="q" value="{{ request.args.get('q','') }}" placeholder="Search headlines, sources, summaries…">
-  <input name="country" value="{{ request.args.get('country','') }}" placeholder="Country or region">
-  <input name="disease" value="{{ request.args.get('disease','') }}" placeholder="Disease / event">
-  <select name="category"><option value="">All categories</option>{% for c in ['Outbreak investigation','Emerging public health threat','Official public health update','Research / surveillance'] %}<option value="{{ c }}" {{ 'selected' if request.args.get('category') == c else '' }}>{{ c }}</option>{% endfor %}</select>
-  <button type="submit">Filter news</button>
-</form>
-<div class="section-head"><div><div class="eyebrow">LATEST COLLECTION</div><h2>Recent reports</h2></div><span class="count">{{ articles|length }} records</span></div>
+{% with placeholder="Search headlines, summaries, sources…" %}{% include "_filters.html" %}{% endwith %}
+
+<div class="section-head">
+  <h2>{{ 'Matching reports' if filtering else 'Latest reports' }}</h2>
+  <span class="count">{{ articles|length }} shown{% if not filtering and stats.total > articles|length %} · <a href="/archive">all {{ stats.total }} in archive →</a>{% endif %}</span>
+</div>
+
 {% if articles %}
-<div class="news-list">
+<div class="news-grid">
 {% for a in articles %}
-<article class="news-card">
-  <div class="card-top"><span class="tag">{{ a['category'] }}</span><span class="date">{{ a['published_at'] or 'Date not supplied' }}</span></div>
+<article class="news-card cat-{{ a['category']|slug }}">
+  <div class="card-top">
+    <span class="tag"><i></i>{{ a['category'] }}</span>
+    <time datetime="{{ a['published_at'] }}" title="{{ a['published_at'] }}">{{ a['published_at']|ago }}</time>
+  </div>
   <h3><a href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">{{ a['title'] }}</a></h3>
-  <div class="metadata"><span><b>Event</b> {{ a['disease_event'] }}</span><span><b>Location</b> {{ a['country_region'] }}</span><span><b>Status</b> {{ a['outbreak_status'] }}</span></div>
-  {% if a['ai_summary'] %}<p class="summary">{{ a['ai_summary'] }}</p>{% elif a['description'] %}<p class="summary">{{ a['description']|striptags|truncate(260) }}</p>{% endif %}
-  <div class="source-row"><span>Source: <b>{{ a['source_name'] }}</b></span><a href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">Read original report ↗</a></div>
+  {% set meta = [('Event', a['disease_event']), ('Location', a['country_region']), ('Status', a['outbreak_status'])] %}
+  <div class="metadata">
+    {% for label, value in meta if value and value != 'Unknown' and value != a['title'] %}<span><b>{{ label }}</b>{{ value }}</span>{% endfor %}
+  </div>
+  {% if a['ai_summary'] %}<p class="summary">{{ a['ai_summary'] }}</p>
+  {% elif a['description'] %}<p class="summary">{{ a['description']|striptags|truncate(240) }}</p>{% endif %}
+  <div class="source-row">
+    <a class="source" href="{{ url_for('latest', source=a['source_name']) }}" title="Show only this source"><span class="source-badge">{{ a['source_name'][:1] }}</span>{{ a['source_name'] }}</a>
+    <a class="read" href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">Original report ↗</a>
+  </div>
 </article>
 {% endfor %}
 </div>
+{% elif status.running and not stats.total %}
+<div class="empty"><div class="spinner" aria-hidden="true"></div><h3>Collecting the latest reports…</h3><p>The server has just started and is reading its sources. This page refreshes on its own in a few seconds.</p></div>
+{% elif filtering %}
+<div class="empty"><h3>No reports match these filters</h3><p>Try a broader search, or <a href="{{ request.path }}">clear all filters</a>.</p></div>
 {% else %}
-<div class="empty"><div class="empty-icon">↗</div><h3>No collected reports yet</h3><p>Configure and enable approved feeds in <code>sources.json</code>, then run <code>python collector.py</code>.</p><p class="muted">This starter does not invent sample outbreak reports.</p></div>
+<div class="empty"><h3>No reports collected yet</h3><p>The next collection will run shortly. Nothing on this site is invented: reports appear only once a source publishes them.</p></div>
 {% endif %}
 {% endblock %}

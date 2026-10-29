@@ -1,0 +1,23 @@
+<form class="filters" action="{{ request.path }}" method="get" role="search">
+  <label class="search">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input name="q" value="{{ request.args.get('q','') }}" placeholder="{{ placeholder }}" aria-label="Search">
+  </label>
+  <input name="country" value="{{ request.args.get('country','') }}" placeholder="Country or region" aria-label="Country or region">
+  <input name="disease" value="{{ request.args.get('disease','') }}" placeholder="Disease / event" aria-label="Disease or event">
+  <select name="source" aria-label="Source">
+    <option value="">All sources</option>
+    {% for s in source_names %}<option value="{{ s }}" {{ 'selected' if request.args.get('source') == s }}>{{ s }}</option>{% endfor %}
+  </select>
+  <button type="submit">Search</button>
+</form>
+<div class="chips" aria-label="Category">
+  {% set current = request.args.get('category', '') %}
+  {% set base = request.args.to_dict() %}
+  {% set _ = base.pop('category', None) %}
+  <a class="chip {{ 'on' if not current }}" href="{{ url_for(request.endpoint, **base) }}">All</a>
+  {% for c in categories %}
+  <a class="chip cat-{{ c|slug }} {{ 'on' if current == c }}" href="{{ url_for(request.endpoint, category=c, **base) }}"><i></i>{{ c }}</a>
+  {% endfor %}
+  {% if filtering %}<a class="chip clear" href="{{ request.path }}">Clear filters ✕</a>{% endif %}
+</div>
