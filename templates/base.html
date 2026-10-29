@@ -33,7 +33,7 @@
   <div class="hero-inner">
     <div class="eyebrow">{% block eyebrow %}Outbreak monitor{% endblock %}</div>
     <h1>{% block heading %}What official health agencies are reporting{% endblock %}</h1>
-    <p>{% block lead %}Outbreak reports from WHO, ECDC, CDC, UKHSA and other official sources, collected automatically and linked back to the original publisher.{% endblock %}</p>
+    {% if self.lead()|trim %}<p>{% block lead %}{% endblock %}</p>{% endif %}
     <dl class="stats">
       <div><dt>Reports in 2026</dt><dd>{{ stats.total or 0 }}</dd></div>
       <div><dt>Published last 7 days</dt><dd>{{ stats.this_week or 0 }}</dd></div>
@@ -46,7 +46,6 @@
 
 <main>
   {% block content %}{% endblock %}
-  <p class="notice"><span aria-hidden="true">ⓘ</span> Classifications and summaries are automated and can be wrong. This is an information index, not an official alerting system — always check the original report.</p>
 </main>
 
 <footer>
