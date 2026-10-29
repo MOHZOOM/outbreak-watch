@@ -1,18 +1,37 @@
 {% extends "base.html" %}
 {% block title %}Archive · Outbreak Watch{% endblock %}
-{% block heading %}Explore the archive{% endblock %}
+{% block eyebrow %}Archive{% endblock %}
+{% block heading %}Every report collected in 2026{% endblock %}
+{% block lead %}Search and filter the full archive by keyword, place, disease, category or source. Each row links to the original publication.{% endblock %}
 {% block content %}
-<form class="filters" action="/archive" method="get">
-  <input name="q" value="{{ request.args.get('q','') }}" placeholder="Search archived reports…">
-  <input name="country" value="{{ request.args.get('country','') }}" placeholder="Country or region">
-  <input name="disease" value="{{ request.args.get('disease','') }}" placeholder="Disease / event">
-  <select name="category"><option value="">All categories</option>{% for c in ['Outbreak investigation','Emerging public health threat','Official public health update','Research / surveillance'] %}<option value="{{ c }}" {{ 'selected' if request.args.get('category') == c else '' }}>{{ c }}</option>{% endfor %}</select>
-  <button type="submit">Search archive</button>
-</form>
-<div class="section-head"><div><div class="eyebrow">HISTORICAL RECORDS</div><h2>Previously collected reports</h2></div><span class="count">{{ articles|length }} records</span></div>
+{% with placeholder="Search the archive…" %}{% include "_filters.html" %}{% endwith %}
+
+<div class="section-head">
+  <h2>{{ 'Matching records' if filtering else 'All records' }}</h2>
+  <span class="count">{{ articles|length }} records</span>
+</div>
+
 {% if articles %}
-<div class="table-wrap"><table><thead><tr><th>Published</th><th>Headline / source</th><th>Event</th><th>Location</th><th>Category</th><th>Original</th></tr></thead><tbody>
-{% for a in articles %}<tr><td>{{ a['published_at'] or 'Unknown' }}</td><td><strong>{{ a['title'] }}</strong><small>{{ a['source_name'] }}</small>{% if a['ai_summary'] %}<p>{{ a['ai_summary']|truncate(150) }}</p>{% endif %}</td><td>{{ a['disease_event'] }}</td><td>{{ a['country_region'] }}</td><td><span class="tag">{{ a['category'] }}</span></td><td><a href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">Open ↗</a></td></tr>{% endfor %}
-</tbody></table></div>
-{% else %}<div class="empty"><h3>The archive is ready for records</h3><p>As feeds are collected, relevant reports will be stored here and searchable.</p></div>{% endif %}
+<div class="table-wrap"><table>
+  <thead><tr><th>Published</th><th>Report</th><th>Event</th><th>Location</th><th>Category</th><th><span class="sr-only">Link</span></th></tr></thead>
+  <tbody>
+  {% for a in articles %}
+  <tr>
+    <td class="nowrap"><time datetime="{{ a['published_at'] }}">{{ a['published_at'] or '—' }}</time></td>
+    <td><a class="row-title" href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">{{ a['title'] }}</a><small>{{ a['source_name'] }}</small>{% if a['ai_summary'] %}<p>{{ a['ai_summary']|truncate(150) }}</p>{% endif %}</td>
+    <td>{{ a['disease_event'] if a['disease_event'] != a['title'] else '—' }}</td>
+    <td>{{ a['country_region'] if a['country_region'] != 'Unknown' else '—' }}</td>
+    <td><span class="tag cat-{{ a['category']|slug }}"><i></i>{{ a['category'] }}</span></td>
+    <td class="nowrap"><a href="{{ a['original_url'] }}" target="_blank" rel="noopener noreferrer">Open ↗</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% elif status.running and not stats.total %}
+<div class="empty"><div class="spinner" aria-hidden="true"></div><h3>Collecting the latest reports…</h3><p>This page refreshes on its own in a few seconds.</p></div>
+{% elif filtering %}
+<div class="empty"><h3>No records match these filters</h3><p>Try a broader search, or <a href="{{ request.path }}">clear all filters</a>.</p></div>
+{% else %}
+<div class="empty"><h3>The archive is empty</h3><p>Relevant reports will be stored here as sources are collected.</p></div>
+{% endif %}
 {% endblock %}

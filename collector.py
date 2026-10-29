@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, urljoin
@@ -240,6 +241,31 @@ def is_2026_report(value):
     return bool(parsed and parsed.startswith(f"{CURRENT_YEAR}-"))
 
 
+def _who_item_link(item):
+    """Build the public page URL for one WHO Disease Outbreak News record."""
+    link = (
+        item.get("ItemDefaultUrl")
+        or item.get("CanonicalUrl")
+        or item.get("Url")
+        or item.get("URL")
+        or ""
+    )
+    slug = str(item.get("UrlName") or "").strip("/")
+
+    # WHO's DON pages live at /emergencies/disease-outbreak-news/item/<slug>,
+    # for both "2026-DON620" style IDs and title-based slugs. ItemDefaultUrl
+    # is often a bare "/<slug>" path that returns 404 on www.who.int.
+    if slug:
+        link = (
+            "https://www.who.int/emergencies/"
+            f"disease-outbreak-news/item/{slug}"
+        )
+    elif link and not link.startswith(("http://", "https://")):
+        link = urljoin("https://www.who.int/", link.lstrip("/"))
+
+    return link
+
+
 def extract_who_api(url):
     """Read WHO records, retain 2026 reports, and verify their source URLs."""
     response = requests.get(
@@ -262,85 +288,25 @@ def extract_who_api(url):
     if not isinstance(payload, list):
         raise ValueError("WHO API response was not a list of records")
 
+    # Resolve every record's link first, then verify them in parallel.
+    links = [_who_item_link(item) for item in payload]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        verified = list(pool.map(
+            lambda link: verify_article_url(link) if link else ("", ""),
+            links,
+        ))
+
     results = []
     rejected_dates = 0
 
-    for item in payload:
+    for item, link, (verified_link, page_published) in zip(
+        payload, links, verified
+    ):
         title = (
             item.get("OverrideTitle")
             if item.get("UseOverrideTitle")
             else None
         ) or item.get("Title") or "Untitled WHO report"
-
-        link = (
-            item.get("ItemDefaultUrl")
-            or item.get("CanonicalUrl")
-            or item.get("Url")
-            or item.get("URL")
-            or ""
-        )
-        slug = str(item.get("UrlName") or "").strip("/")
-
-        # Temporary diagnostic: inspect WHO URL fields for MERS reports.
-        # Match multiple fields because WHO may use an override title or a short title.
-        mers_search_text = " ".join(
-            str(item.get(field) or "")
-            for field in (
-                "Title",
-                "OverrideTitle",
-                "UrlName",
-                "ItemDefaultUrl",
-                "CanonicalUrl",
-                "Url",
-                "URL",
-            )
-        ).lower()
-
-        if (
-            "mers" in mers_search_text
-            or "middle east respiratory" in mers_search_text
-        ):
-            print(
-                "[DEBUG] MERS URL fields: "
-                + json.dumps({
-                    "ItemDefaultUrl": item.get("ItemDefaultUrl"),
-                    "CanonicalUrl": item.get("CanonicalUrl"),
-                    "Url": item.get("Url"),
-                    "URL": item.get("URL"),
-                    "UrlName": item.get("UrlName"),
-                    "Title": item.get("Title"),
-                    "OverrideTitle": item.get("OverrideTitle"),
-                    "ResolvedTitle": title,
-                }, ensure_ascii=False),
-                flush=True
-            )
-
-        # Prefer WHO's standard DON page when the API provides a DON identifier.
-        # This avoids keeping a title-based URL when a canonical DON ID exists.
-        if slug and "-DON" in slug.upper():
-            link = (
-                "https://www.who.int/emergencies/"
-                f"disease-outbreak-news/item/{slug}"
-            )
-        elif link:
-            # Preserve the URL provided by WHO; only make relative URLs absolute.
-            if not link.startswith(("http://", "https://")):
-                link = urljoin("https://www.who.int/", link.lstrip("/"))
-        elif slug:
-            # Last-resort fallback if WHO supplies a slug but no URL.
-            link = urljoin(
-                "https://www.who.int/",
-                f"emergencies/disease-outbreak-news/item/{slug}"
-            )
-
-        if (
-            "mers" in mers_search_text
-            or "middle east respiratory" in mers_search_text
-        ):
-            print(
-                f"[DEBUG] MERS resolved URL: {link!r}",
-                flush=True
-            )
 
         # Prefer original publication dates over modification dates.
         date_fields = (
@@ -378,7 +344,6 @@ def extract_who_api(url):
             )
             continue
 
-        verified_link, page_published = verify_article_url(link)
         if not verified_link:
             print(
                 f"[WARN] WHO report skipped because its URL could not be verified: {title!r}",
@@ -927,26 +892,6 @@ def collect_once():
     )
 
     init_db()
-
-    # Remove the known broken, title-generated WHO URL from older database runs.
-    # Do not substitute an unrelated 2025 report for a claimed 2026 report.
-    broken_mers_url = "%middle-east-respiratory-syndrome-coronavirus---kingdom-of-saudi-arabia%"
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        stale_rows = conn.execute(
-            "SELECT id, title FROM articles WHERE lower(original_url) LIKE lower(?)",
-            (broken_mers_url,),
-        ).fetchall()
-        if stale_rows:
-            conn.execute(
-                "DELETE FROM articles WHERE lower(original_url) LIKE lower(?)",
-                (broken_mers_url,),
-            )
-            print(
-                f"[WARN] Removed {len(stale_rows)} stale record(s) with the known broken MERS URL. "
-                "They will only return if a verified source is found.",
-                flush=True,
-            )
 
     new_count = 0
     sources = load_sources()

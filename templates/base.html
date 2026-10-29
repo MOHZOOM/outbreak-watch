@@ -3,23 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Source-first index of outbreak reports from WHO, ECDC, CDC, UKHSA and other official public-health bodies.">
   <title>{% block title %}Outbreak Watch{% endblock %}</title>
+  {% if status.running and not stats.total %}<meta http-equiv="refresh" content="20">{% endif %}
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23147d78'/><circle cx='16' cy='16' r='6' fill='none' stroke='white' stroke-width='3'/></svg>">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/"><span class="brand-mark">OW</span><span>OUTBREAK <b>WATCH</b><small>Public health intelligence · source-first news</small></span></a>
-  <nav><a class="{{ 'selected' if active == 'latest' else '' }}" href="/">Latest news</a><a class="{{ 'selected' if active == 'archive' else '' }}" href="/archive">Archive</a></nav>
+  <div class="topbar-inner">
+    <a class="brand" href="/">
+      <span class="brand-mark" aria-hidden="true"><span></span></span>
+      <span>Outbreak <b>Watch</b><small>Source-first public health news</small></span>
+    </a>
+    <nav aria-label="Main">
+      <a class="{{ 'selected' if active == 'latest' }}" href="/">Latest</a>
+      <a class="{{ 'selected' if active == 'archive' }}" href="/archive">Archive</a>
+      <a class="{{ 'selected' if active == 'sources' }}" href="/sources">Sources</a>
+    </nav>
+    <div class="status {{ 'is-running' if status.running }}" role="status">
+      <span class="status-dot"></span>
+      {% if status.running %}Collecting new reports…
+      {% elif stats.last_collected %}Updated {{ stats.last_collected[11:16] }} UTC
+      {% else %}Waiting for first collection{% endif %}
+    </div>
+  </div>
 </header>
+
+<section class="hero {% block hero_class %}has-filters{% endblock %}">
+  <div class="hero-inner">
+    <div class="eyebrow">{% block eyebrow %}Outbreak monitor{% endblock %}</div>
+    <h1>{% block heading %}What official health agencies are reporting{% endblock %}</h1>
+    <p>{% block lead %}Outbreak reports from WHO, ECDC, CDC, UKHSA and other official sources, collected automatically and linked back to the original publisher.{% endblock %}</p>
+    <dl class="stats">
+      <div><dt>Reports in 2026</dt><dd>{{ stats.total or 0 }}</dd></div>
+      <div><dt>Published last 7 days</dt><dd>{{ stats.this_week or 0 }}</dd></div>
+      {% if stats.locations %}<div><dt>Countries &amp; regions</dt><dd>{{ stats.locations }}</dd></div>
+      {% else %}<div><dt>Published last 30 days</dt><dd>{{ stats.this_month or 0 }}</dd></div>{% endif %}
+      <div><dt>Active sources</dt><dd>{{ stats.sources or 0 }}</dd></div>
+    </dl>
+  </div>
+</section>
+
 <main>
-  <section class="hero">
-    <div class="eyebrow">OUTBREAK INVESTIGATION MONITOR</div>
-    <h1>{% block heading %}A clearer view of emerging health events.{% endblock %}</h1>
-    <p>Curated outbreak reporting from trusted public-health sources, organized for fast review. Always follow the original source for authoritative updates.</p>
-  </section>
-  <div class="notice"><span class="notice-dot"></span> AI-assisted classification and summaries may contain errors. This site is an information index, not an official alerting system.</div>
   {% block content %}{% endblock %}
+  <p class="notice"><span aria-hidden="true">ⓘ</span> Classifications and summaries are automated and can be wrong. This is an information index, not an official alerting system — always check the original report.</p>
 </main>
-<footer><span>OUTBREAK WATCH</span><span>Original publishers retain ownership of their content. Source links are preserved.</span></footer>
+
+<footer>
+  <div class="footer-inner">
+    <span class="footer-brand">Outbreak Watch</span>
+    <span>Original publishers retain ownership of their content. <a href="/sources">See all sources</a> · <a href="https://github.com/MOHZOOM/outbreak-watch" target="_blank" rel="noopener noreferrer">Source code</a></span>
+  </div>
+</footer>
 </body>
 </html>

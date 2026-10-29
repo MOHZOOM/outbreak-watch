@@ -10,15 +10,16 @@ It is built for people who want one place to see what WHO, ECDC and similar bodi
 
 ## What it does
 
-- **Collects** reports on a schedule (every 30 minutes by default) from official sources: WHO Disease Outbreak News, WHO AFRO and ECDC.
+- **Collects** reports on a schedule (every 30 minutes by default) from official sources: WHO Disease Outbreak News, WHO AFRO, ECDC (epidemiological updates, weekly threats report, risk assessments), Eurosurveillance, US CDC Travel Health Notices and the UK Health Security Agency.
 - **Verifies** every link before saving it: the page must actually load, and its publication date is cross-checked on the article page itself.
 - **Filters** to reports published in the current year (2026) and to outbreak-related content.
 - **Classifies** each report by category, disease/event, country/region and outbreak status, and writes a short neutral summary when AI is enabled.
 - **Removes duplicates** by URL and by near-identical titles.
-- **Displays** everything on two pages:
-  - **Latest News** – the most recent reports
+- **Displays** everything on three pages:
+  - **Latest** – the most recent reports, with headline stats
   - **Archive** – everything collected so far
-- **Search and filters** by keyword, country/region, disease/event and category.
+  - **Sources** – every configured source, with report counts and a link to the publisher
+- **Search and filters** by keyword, country/region, disease/event, category and source.
 
 Every item shows its original source name and a link to the original report. The site never invents sample news: if nothing has been collected, it says so.
 
@@ -28,7 +29,7 @@ Every item shows its original source name and a link to the original report. The
 
 ```mermaid
 flowchart LR
-    A[Official sources<br/>WHO API · WHO AFRO · ECDC RSS] --> B[Collector<br/>collector.py]
+    A[Official sources<br/>WHO API · WHO AFRO · ECDC · CDC · UKHSA] --> B[Collector<br/>collector.py]
     B --> C[Verify link<br/>and publication date]
     C --> D[Keep 2026 +<br/>outbreak-related only]
     D --> E[Deduplicate<br/>URL + title similarity]
@@ -68,7 +69,7 @@ outbreak-watch/
 ├── ai_processor.py     # AI classification/summary with keyword fallback
 ├── sources.json        # List of sources (enable/disable here)
 ├── schema.sql          # Database table definition
-├── templates/          # HTML pages (base, latest, archive)
+├── templates/          # HTML pages (base, latest, archive, sources)
 ├── static/style.css    # Styling
 ├── requirements.txt    # Python dependencies
 ├── Dockerfile          # Container image (includes Chromium for ScrapeGraphAI)
@@ -139,6 +140,8 @@ Edit `sources.json`:
   "enabled": true
 }
 ```
+
+`homepage`, `region` and `about` are optional and only used on the Sources page. Sources run in file order, so keep fast RSS feeds first and slow scrapers (especially `ai_scrape`) last; the site then fills up within seconds after a restart.
 
 Prefer official sources with an RSS feed or API. Before adding a site, check its terms of use and `robots.txt`, and don't scrape sites that disallow automated access.
 
