@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import Flask, render_template, request
-from collector import init_db, DB_PATH, collect_once, load_sources
+from collector import init_db, DB_PATH, collect_once
 
 BASE_DIR = Path(__file__).resolve().parent
 app = Flask(__name__)
@@ -140,14 +140,6 @@ def slug(value):
 @app.route("/")
 def latest():
     return render_template("index.html", articles=get_articles()[:60], active="latest")
-
-@app.route("/sources")
-def sources():
-    counts = {r["source_name"]: r for r in query(
-        """SELECT source_name, COUNT(*) AS n, MAX(published_at) AS newest
-           FROM articles WHERE is_relevant = 1 GROUP BY source_name"""
-    )}
-    return render_template("sources.html", sources=load_sources(), counts=counts, active="sources")
 
 @app.route("/archive")
 def archive():
