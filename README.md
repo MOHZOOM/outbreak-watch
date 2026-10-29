@@ -10,7 +10,7 @@ It is built for people who want one place to see what WHO, ECDC and similar bodi
 
 ## What it does
 
-- **Collects** reports on a schedule (every 30 minutes by default) from official sources: WHO Disease Outbreak News, WHO AFRO, ECDC (epidemiological updates, weekly threats report, risk assessments), Eurosurveillance, US CDC Travel Health Notices and the UK Health Security Agency.
+- **Collects** reports on a schedule (every 30 minutes by default) from official sources. WHO Disease Outbreak News comes from WHO's API; every other source (ECDC Newsroom, ECDC weekly threats report, US CDC Travel Health Notices, UK Health Security Agency, Eurosurveillance, WHO AFRO) is read by [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai), and every link and date it returns is checked on the real page.
 - **Verifies** every link before saving it: the page must actually load, and its publication date is cross-checked on the article page itself.
 - **Filters** to reports published in the current year (2026) and to outbreak-related content.
 - **Classifies** each report by category, disease/event, country/region and outbreak status, and writes a short neutral summary when AI is enabled.
@@ -29,7 +29,7 @@ Every item shows its original source name and a link to the original report. The
 
 ```mermaid
 flowchart LR
-    A[Official sources<br/>WHO API · WHO AFRO · ECDC · CDC · UKHSA] --> B[Collector<br/>collector.py]
+    A[Official sources<br/>WHO API + ScrapeGraphAI<br/>ECDC · CDC · UKHSA · WHO AFRO] --> B[Collector<br/>collector.py]
     B --> C[Verify link<br/>and publication date]
     C --> D[Keep 2026 +<br/>outbreak-related only]
     D --> E[Deduplicate<br/>URL + title similarity]
@@ -126,7 +126,9 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-The site works without an API key. It falls back to keyword rules, and any source of type `ai_scrape` will simply fail and be skipped.
+The site works without an API key, but then only the WHO API source collects anything: classification falls back to keyword rules, and every `ai_scrape` source fails and is skipped.
+
+`ai_scrape` sources open their articles in parallel with a 90-second limit per source (`AI_SOURCE_DEADLINE_SECONDS` in `collector.py`), so a slow or stalled website cannot hold up the whole collection. Some sites, such as ECDC's search and risk-assessment pages, refuse automated browsers; those sources are disabled rather than worked around.
 
 ### Adding or changing sources
 

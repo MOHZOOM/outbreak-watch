@@ -1,59 +1,5 @@
 [
   {
-    "name": "ECDC Epidemiological Updates",
-    "url": "https://www.ecdc.europa.eu/en/taxonomy/term/1310/feed",
-    "homepage": "https://www.ecdc.europa.eu/en/news-events",
-    "region": "Europe",
-    "about": "Epidemiological updates from the European Centre for Disease Prevention and Control.",
-    "type": "rss",
-    "enabled": true
-  },
-  {
-    "name": "ECDC Communicable Disease Threats Report",
-    "url": "https://www.ecdc.europa.eu/en/taxonomy/term/1505/feed",
-    "homepage": "https://www.ecdc.europa.eu/en/publications-data/monitoring/weekly-threats-reports",
-    "region": "Europe",
-    "about": "ECDC's weekly bulletin of active communicable disease threats.",
-    "type": "rss",
-    "enabled": true
-  },
-  {
-    "name": "ECDC Risk and Threat Assessments",
-    "url": "https://www.ecdc.europa.eu/en/taxonomy/term/1295/feed",
-    "homepage": "https://www.ecdc.europa.eu/en/publications-data",
-    "region": "Europe",
-    "about": "Rapid risk assessments and threat assessment briefs for the EU/EEA.",
-    "type": "rss",
-    "enabled": true
-  },
-  {
-    "name": "CDC Travel Health Notices",
-    "url": "https://wwwnc.cdc.gov/travel/rss/notices.xml",
-    "homepage": "https://wwwnc.cdc.gov/travel/notices",
-    "region": "Global",
-    "about": "US CDC notices about outbreaks and health risks at travel destinations.",
-    "type": "rss",
-    "enabled": true
-  },
-  {
-    "name": "UK Health Security Agency",
-    "url": "https://www.gov.uk/government/organisations/uk-health-security-agency.atom",
-    "homepage": "https://www.gov.uk/government/organisations/uk-health-security-agency",
-    "region": "United Kingdom",
-    "about": "Announcements, surveillance data and guidance published by UKHSA on GOV.UK.",
-    "type": "rss",
-    "enabled": true
-  },
-  {
-    "name": "Eurosurveillance",
-    "url": "https://www.eurosurveillance.org/rss/content/eurosurveillance/latestarticles?fmt=rss",
-    "homepage": "https://www.eurosurveillance.org/",
-    "region": "Europe",
-    "about": "ECDC's peer-reviewed journal on infectious disease surveillance and outbreaks.",
-    "type": "rss",
-    "enabled": true
-  },
-  {
     "name": "WHO Disease Outbreak News",
     "url": "https://cms.who.int/api/hubs/diseaseoutbreaknews?$orderby=PublicationDate%20desc&$top=100",
     "homepage": "https://www.who.int/emergencies/disease-outbreak-news",
@@ -63,13 +9,76 @@
     "enabled": true
   },
   {
+    "name": "ECDC Newsroom",
+    "url": "https://www.ecdc.europa.eu/en/news-events",
+    "homepage": "https://www.ecdc.europa.eu/en/news-events",
+    "region": "Europe",
+    "about": "News, epidemiological updates and outbreak statements from the European Centre for Disease Prevention and Control.",
+    "type": "ai_scrape",
+    "enabled": true
+  },
+  {
+    "name": "ECDC Communicable Disease Threats Report",
+    "url": "https://www.ecdc.europa.eu/en/threats-and-outbreaks/reports-and-data/weekly-threats",
+    "homepage": "https://www.ecdc.europa.eu/en/publications-data/monitoring/weekly-threats-reports",
+    "region": "Europe",
+    "about": "ECDC's weekly bulletin of active communicable disease threats.",
+    "type": "ai_scrape",
+    "enabled": true
+  },
+  {
+    "name": "ECDC Risk and Threat Assessments",
+    "url": "https://www.ecdc.europa.eu/en/search?s=&sort_bef_combine=date_DESC&f%5B0%5D=categories%3A1295",
+    "homepage": "https://www.ecdc.europa.eu/en/publications-data",
+    "region": "Europe",
+    "about": "Rapid risk assessments for the EU/EEA. Disabled: ECDC blocks automated browsers on this page.",
+    "type": "ai_scrape",
+    "enabled": false
+  },
+  {
+    "name": "CDC Travel Health Notices",
+    "url": "https://wwwnc.cdc.gov/travel/notices",
+    "homepage": "https://wwwnc.cdc.gov/travel/notices",
+    "region": "Global",
+    "about": "US CDC notices about outbreaks and health risks at travel destinations.",
+    "type": "ai_scrape",
+    "enabled": true
+  },
+  {
+    "name": "UK Health Security Agency",
+    "url": "https://www.gov.uk/search/news-and-communications?organisations%5B%5D=uk-health-security-agency&order=updated-newest",
+    "homepage": "https://www.gov.uk/government/organisations/uk-health-security-agency",
+    "region": "United Kingdom",
+    "about": "Announcements, surveillance data and guidance published by UKHSA on GOV.UK.",
+    "type": "ai_scrape",
+    "enabled": true
+  },
+  {
+    "name": "Eurosurveillance",
+    "url": "https://www.eurosurveillance.org/content/eurosurveillance/browse",
+    "homepage": "https://www.eurosurveillance.org/",
+    "region": "Europe",
+    "about": "ECDC's peer-reviewed journal on infectious disease surveillance and outbreaks.",
+    "type": "ai_scrape",
+    "enabled": true
+  },
+  {
     "name": "WHO AFRO Emergencies and Outbreaks",
     "url": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
     "homepage": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
     "region": "Africa",
     "about": "Outbreak and emergency updates from the WHO Regional Office for Africa.",
-    "type": "web_scrape",
+    "type": "ai_scrape",
     "enabled": true
+  },
+  {
+    "name": "WHO AFRO Emergencies and Outbreaks (plain scraper)",
+    "url": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
+    "homepage": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
+    "region": "Africa",
+    "about": "Plain HTML scraper for the WHO AFRO page. Disabled: the ScrapeGraphAI source reads the same page.",
+    "type": "web_scrape",
+    "enabled": false
   },
   {
     "name": "WHO AFRO Emergencies RSS",
@@ -79,14 +88,5 @@
     "about": "WHO AFRO's emergencies feed (currently not published).",
     "type": "rss",
     "enabled": false
-  },
-  {
-    "name": "WHO AFRO Emergencies and Outbreaks (ScrapeGraphAI)",
-    "url": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
-    "homepage": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
-    "region": "Africa",
-    "about": "The same WHO AFRO page, read by ScrapeGraphAI (LLM). Runs last because it is the slowest.",
-    "type": "ai_scrape",
-    "enabled": true
   }
 ]
