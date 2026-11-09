@@ -10,7 +10,7 @@ It is built for people who want one place to see what WHO, ECDC and similar bodi
 
 ## What it does
 
-- **Collects** reports on a schedule (every 30 minutes by default) from official sources. WHO Disease Outbreak News comes from WHO's API; every other source (ECDC Newsroom, ECDC weekly threats report, US CDC Travel Health Notices, UK Health Security Agency, Eurosurveillance, WHO AFRO) is read by [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai), and every link and date it returns is checked on the real page.
+- **Collects** reports on a schedule (every 30 minutes by default) from official sources. Every source (WHO Disease Outbreak News, ECDC Newsroom, ECDC weekly threats report, US CDC Travel Health Notices, UK Health Security Agency, Eurosurveillance, WHO AFRO) is read by [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai), and every link and date it returns is checked on the real page.
 - **Verifies** every link before saving it: the page must actually load, and its publication date is cross-checked on the article page itself.
 - **Filters** to reports published in the current year (2026) and to outbreak-related content.
 - **Classifies** each report by category, disease/event, country/region and outbreak status, and writes a short neutral summary when AI is enabled.
@@ -28,7 +28,7 @@ Every item shows its original source name and a link to the original report. The
 
 ```mermaid
 flowchart LR
-    A[Official sources<br/>WHO API + ScrapeGraphAI<br/>ECDC · CDC · UKHSA · WHO AFRO] --> B[Collector<br/>collector.py]
+    A[Official sources<br/>read by ScrapeGraphAI<br/>WHO · ECDC · CDC · UKHSA · WHO AFRO] --> B[Collector<br/>collector.py]
     B --> C[Verify link<br/>and publication date]
     C --> D[Keep 2026 +<br/>outbreak-related only]
     D --> E[Deduplicate<br/>URL + title similarity]
@@ -37,14 +37,7 @@ flowchart LR
     G --> H[Flask website<br/>Latest · Archive]
 ```
 
-1. **Collection** – `collector.py` reads each enabled source in `sources.json`. Four source types are supported:
-
-   | Type | How it works |
-   |---|---|
-   | `who_api` | Reads WHO's Disease Outbreak News JSON API |
-   | `rss` | Reads a standard RSS/Atom feed |
-   | `web_scrape` | Reads a listing page with Requests + BeautifulSoup, then opens each article |
-   | `ai_scrape` | Uses [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai) (an LLM) to read a listing page; every link and date it returns is then checked on the real page |
+1. **Collection** – `collector.py` reads each enabled source in `sources.json`. Every source uses the `ai_scrape` type: [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai) (an LLM with a headless Chromium browser) reads the listing page, and every link and date it returns is then checked on the real article page. Any other type is skipped with a warning.
 
    Scrapers respect each site's `robots.txt` and only follow links on the source's own domain.
 
@@ -125,7 +118,7 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-The site works without an API key, but then only the WHO API source collects anything: classification falls back to keyword rules, and every `ai_scrape` source fails and is skipped.
+An OpenAI API key is required to collect anything: without one, every source (they all use ScrapeGraphAI) fails and is skipped, and classification falls back to keyword rules.
 
 `ai_scrape` sources open their articles in parallel with a 90-second limit per source (`AI_SOURCE_DEADLINE_SECONDS` in `collector.py`), so a slow or stalled website cannot hold up the whole collection. Some sites, such as ECDC's search and risk-assessment pages, refuse automated browsers; those sources are disabled rather than worked around.
 
@@ -135,16 +128,19 @@ Edit `sources.json`:
 
 ```json
 {
-  "name": "ECDC Epidemiological Updates",
-  "url": "https://www.ecdc.europa.eu/en/taxonomy/term/1310/feed",
-  "type": "rss",
+  "name": "WHO Disease Outbreak News",
+  "url": "https://www.who.int/emergencies/disease-outbreak-news",
+  "type": "ai_scrape",
+  "loader_kwargs": { "load_state": "networkidle" },
   "enabled": true
 }
 ```
 
-`homepage`, `region` and `about` are optional notes for whoever maintains the list. Sources run in file order, so keep fast RSS feeds first and slow scrapers (especially `ai_scrape`) last; the site then fills up within seconds after a restart.
+`loader_kwargs` is optional and is passed to ScrapeGraphAI's browser loader. Use `{"load_state": "networkidle"}` for pages that load their list of articles with JavaScript after the page opens (such as WHO Disease Outbreak News).
 
-Prefer official sources with an RSS feed or API. Before adding a site, check its terms of use and `robots.txt`, and don't scrape sites that disallow automated access.
+`homepage`, `region` and `about` are optional notes for whoever maintains the list. Sources run in file order.
+
+Before adding a site, check its terms of use and `robots.txt`, and don't scrape sites that disallow automated access.
 
 ---
 
