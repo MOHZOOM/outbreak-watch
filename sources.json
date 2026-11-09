@@ -1,11 +1,14 @@
 [
   {
     "name": "WHO Disease Outbreak News",
-    "url": "https://cms.who.int/api/hubs/diseaseoutbreaknews?$orderby=PublicationDate%20desc&$top=100",
+    "url": "https://www.who.int/emergencies/disease-outbreak-news",
     "homepage": "https://www.who.int/emergencies/disease-outbreak-news",
     "region": "Global",
     "about": "The World Health Organization's official reports on acute public health events.",
-    "type": "who_api",
+    "type": "ai_scrape",
+    "loader_kwargs": {
+      "load_state": "networkidle"
+    },
     "enabled": true
   },
   {
@@ -70,23 +73,5 @@
     "about": "Outbreak and emergency updates from the WHO Regional Office for Africa.",
     "type": "ai_scrape",
     "enabled": true
-  },
-  {
-    "name": "WHO AFRO Emergencies and Outbreaks (plain scraper)",
-    "url": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
-    "homepage": "https://www.afro.who.int/outbreaks-and-emergencies-updates",
-    "region": "Africa",
-    "about": "Plain HTML scraper for the WHO AFRO page. Disabled: the ScrapeGraphAI source reads the same page.",
-    "type": "web_scrape",
-    "enabled": false
-  },
-  {
-    "name": "WHO AFRO Emergencies RSS",
-    "url": "https://afro.who.int/rss/emergencies.xml",
-    "homepage": "https://www.afro.who.int/",
-    "region": "Africa",
-    "about": "WHO AFRO's emergencies feed (currently not published).",
-    "type": "rss",
-    "enabled": false
   }
 ]

@@ -9,7 +9,6 @@ from urllib.parse import urlsplit, urlunsplit, urljoin
 from urllib.robotparser import RobotFileParser
 from typing import List, Optional
 
-import feedparser
 import requests
 from bs4 import BeautifulSoup
 from rapidfuzz.fuzz import ratio
@@ -96,19 +95,6 @@ def allowed_by_robots(url):
     return parser.can_fetch("OutbreakWatchMVP", url)
 
 
-def fetch_page(url):
-    if not allowed_by_robots(url):
-        raise requests.RequestException(f"Blocked by robots.txt: {url}")
-
-    response = requests.get(
-        url,
-        headers={"User-Agent": USER_AGENT},
-        timeout=REQUEST_TIMEOUT
-    )
-    response.raise_for_status()
-    return response
-
-
 def inspect_article(url):
     """Open an article once and return (final URL, publication date, description).
 
@@ -162,12 +148,6 @@ def inspect_article(url):
     except requests.RequestException as exc:
         print(f"[WARN] Could not verify source URL {url}: {exc}", flush=True)
         return "", "", ""
-
-
-def verify_article_url(url):
-    """Return (final URL, page publication date), or empty values for an invalid page."""
-    final_url, published, _ = inspect_article(url)
-    return final_url, published
 
 
 def parse_date(value):
@@ -254,159 +234,6 @@ def parse_date_simple(value):
 def is_2026_report(value):
     parsed = parse_date(value)
     return bool(parsed and parsed.startswith(f"{CURRENT_YEAR}-"))
-
-
-def _who_item_link(item):
-    """Build the public page URL for one WHO Disease Outbreak News record."""
-    link = (
-        item.get("ItemDefaultUrl")
-        or item.get("CanonicalUrl")
-        or item.get("Url")
-        or item.get("URL")
-        or ""
-    )
-    slug = str(item.get("UrlName") or "").strip("/")
-
-    # WHO's DON pages live at /emergencies/disease-outbreak-news/item/<slug>,
-    # for both "2026-DON620" style IDs and title-based slugs. ItemDefaultUrl
-    # is often a bare "/<slug>" path that returns 404 on www.who.int.
-    if slug:
-        link = (
-            "https://www.who.int/emergencies/"
-            f"disease-outbreak-news/item/{slug}"
-        )
-    elif link and not link.startswith(("http://", "https://")):
-        link = urljoin("https://www.who.int/", link.lstrip("/"))
-
-    return link
-
-
-def extract_who_api(url):
-    """Read WHO records, retain 2026 reports, and verify their source URLs."""
-    response = requests.get(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json"
-        },
-        timeout=REQUEST_TIMEOUT
-    )
-    response.raise_for_status()
-    payload = response.json()
-
-    if isinstance(payload, dict):
-        payload = payload.get(
-            "Items",
-            payload.get("items", payload.get("value", []))
-        )
-
-    if not isinstance(payload, list):
-        raise ValueError("WHO API response was not a list of records")
-
-    # Resolve every record's link first, then verify them in parallel.
-    links = [_who_item_link(item) for item in payload]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        verified = list(pool.map(
-            lambda link: verify_article_url(link) if link else ("", ""),
-            links,
-        ))
-
-    results = []
-    rejected_dates = 0
-
-    for item, link, (verified_link, page_published) in zip(
-        payload, links, verified
-    ):
-        title = (
-            item.get("OverrideTitle")
-            if item.get("UseOverrideTitle")
-            else None
-        ) or item.get("Title") or "Untitled WHO report"
-
-        # Prefer original publication dates over modification dates.
-        date_fields = (
-            "PublicationDateAndTime",
-            "PublicationDate",
-            "DatePublished",
-            "DateCreated",
-            "Created"
-        )
-
-        raw_date = ""
-        parsed_date = ""
-
-        for field in date_fields:
-            candidate = item.get(field)
-            if candidate:
-                parsed_candidate = parse_date(candidate)
-                if parsed_candidate:
-                    raw_date = str(candidate)
-                    parsed_date = parsed_candidate
-                    break
-
-        if len(results) < 5 and rejected_dates < 5:
-            print(
-                f"[DEBUG] WHO title={title!r}; "
-                f"date field={raw_date!r}; "
-                f"parsed date={parsed_date!r}",
-                flush=True
-            )
-
-        if not link:
-            print(
-                f"[WARN] WHO report skipped because it has no source URL: {title!r}",
-                flush=True,
-            )
-            continue
-
-        if not verified_link:
-            print(
-                f"[WARN] WHO report skipped because its URL could not be verified: {title!r}",
-                flush=True,
-            )
-            continue
-
-        # Trust the article page's own publication date when available; the API
-        # date can otherwise make an older article appear to be from 2026.
-        if page_published:
-            if page_published != parsed_date:
-                print(
-                    f"[INFO] WHO date cross-check for {title!r}: "
-                    f"API={parsed_date!r}, page={page_published!r}; using page date.",
-                    flush=True,
-                )
-            parsed_date = page_published
-
-        if not is_2026_report(parsed_date):
-            rejected_dates += 1
-            continue
-
-        description = " ".join(
-            str(item.get(key) or "")
-            for key in (
-                "Summary",
-                "Overview",
-                "Epidemiology",
-                "Assessment"
-            )
-            if item.get(key)
-        )
-
-        if verified_link:
-            results.append({
-                "title": str(title).strip(),
-                "link": verified_link,
-                "description": description.strip(),
-                "published": parsed_date
-            })
-
-    print(
-        f"[INFO] WHO API: {len(results)} dated 2026 reports; "
-        f"{rejected_dates} rejected as undated or outside 2026",
-        flush=True
-    )
-
-    return results
 
 
 def extract_page_date(soup):
@@ -503,175 +330,6 @@ def extract_listing_date(link_tag):
         current = current.parent
 
     return ""
-
-
-def extract_web_page(url):
-    """
-    Scrape article pages from the configured website.
-    Only verified 2026 publication dates are accepted.
-    """
-    response = fetch_page(url)
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    source_host = (urlsplit(url).hostname or "").lower()
-    allowed_hosts = {source_host}
-
-    if source_host.startswith("www."):
-        allowed_hosts.add(source_host[4:])
-    else:
-        allowed_hosts.add("www." + source_host)
-
-    results = []
-    seen = set()
-    checked = 0
-    max_pages_to_check = MAX_ENTRIES_PER_SOURCE * 3
-
-    article_path_hints = (
-        "news", "outbreak", "emergency", "emergencies", "update",
-        "updates", "publication", "disease", "health", "situation",
-    )
-
-    ignored_path_parts = (
-        "/rss", "/feed", "/search", "/taxonomy/", "/user/",
-        "/contact", "/about", "/privacy", "/accessibility",
-    )
-
-    for link_tag in soup.select("a[href]"):
-        title = " ".join(link_tag.get_text(" ", strip=True).split())
-        href = urljoin(url, link_tag.get("href", ""))
-        parts = urlsplit(href)
-        host = (parts.hostname or "").lower()
-        path = parts.path.lower()
-
-        if not title or len(title) < 12:
-            continue
-
-        if parts.scheme not in {"http", "https"}:
-            continue
-
-        if host not in allowed_hosts:
-            continue
-
-        if any(piece in path for piece in ignored_path_parts):
-            continue
-
-        canonical = canonical_url(href)
-
-        if canonical == canonical_url(url) or canonical in seen:
-            continue
-
-        seen.add(canonical)
-
-        title_and_path = (title + " " + path).lower()
-
-        keyword_match = any(
-            word in title_and_path for word in OUTBREAK_KEYWORDS
-        )
-
-        path_hint_match = any(
-            word in path for word in article_path_hints
-        )
-
-        # Avoid fetching ordinary navigation links.
-        if not keyword_match and not path_hint_match:
-            continue
-
-        checked += 1
-
-        if checked > max_pages_to_check:
-            print(
-                "[INFO] Web scraper reached its page-check limit",
-                flush=True
-            )
-            break
-
-        published = extract_listing_date(link_tag)
-        description = ""
-        article_title = title
-
-        try:
-            article_response = fetch_page(canonical)
-            article_soup = BeautifulSoup(
-                article_response.text,
-                "html.parser"
-            )
-
-            if not published:
-                published = extract_page_date(article_soup)
-
-            # Prefer the actual article heading.
-            heading = article_soup.find(["h1", "h2"])
-
-            if heading:
-                heading_text = " ".join(
-                    heading.get_text(" ", strip=True).split()
-                )
-
-                if len(heading_text) >= 12:
-                    article_title = heading_text
-
-            description_tag = (
-                article_soup.find(
-                    "meta", attrs={"name": "description"}
-                )
-                or article_soup.find(
-                    "meta", attrs={"property": "og:description"}
-                )
-            )
-
-            if description_tag:
-                description = description_tag.get("content", "")
-
-            if not description:
-                main_content = (
-                    article_soup.find("main")
-                    or article_soup.find("article")
-                )
-
-                if main_content:
-                    description = " ".join(
-                        main_content.get_text(" ", strip=True).split()
-                    )
-
-        except requests.RequestException as exc:
-            print(
-                f"[WARN] Could not fetch article {canonical}: {exc}",
-                flush=True
-            )
-            continue
-
-        relevant_text = (
-            article_title + " " + path + " " + description[:1500]
-        ).lower()
-
-        if not any(word in relevant_text for word in OUTBREAK_KEYWORDS):
-            continue
-
-        if not is_2026_report(published):
-            print(
-                f"[DEBUG] HTML report excluded: "
-                f"{article_title!r}; date={published!r}",
-                flush=True
-            )
-            continue
-
-        results.append({
-            "title": article_title[:500],
-            "link": canonical,
-            "description": description[:5000],
-            "published": parse_date(published),
-        })
-
-        if len(results) >= MAX_ENTRIES_PER_SOURCE:
-            break
-
-    print(
-        f"[INFO] HTML scraper checked {checked} candidate pages; "
-        f"found {len(results)} dated 2026 reports from {source_host}",
-        flush=True,
-    )
-
-    return results
 
 
 def _find_item_list(data):
@@ -828,6 +486,9 @@ def extract_ai_scrape(source):
             },
             "verbose": False,
             "headless": True,
+            # Optional per-source browser options from sources.json, e.g.
+            # {"load_state": "networkidle"} for pages that load items with JS.
+            "loader_kwargs": source.get("loader_kwargs") or {},
         },
     )
 
@@ -927,54 +588,15 @@ def collect_once():
         )
 
         try:
-            if source_type == "who_api":
-                entries = extract_who_api(source["url"])
-
-            elif source_type == "web_scrape":
-                # Use ordinary HTTP requests + BeautifulSoup to scrape the listing
-                # and individual article pages. No browser or AI scraping package.
-                # fetch_page() checks robots.txt before every request.
-                entries = extract_web_page(source["url"])
-
-            elif source_type == "ai_scrape":
-                # ScrapeGraphAI (LLM-based) reads the listing page; every
-                # link and date is then verified with ordinary requests.
+            if source_type == "ai_scrape":
+                # Every source goes through ScrapeGraphAI (LLM-based), which
+                # reads the listing page; every link and date it returns is
+                # then verified on the real article page.
                 entries = extract_ai_scrape(source)
-
-            elif source_type == "rss":
-                feed = feedparser.parse(
-                    source["url"],
-                    request_headers={"User-Agent": USER_AGENT}
-                )
-
-                entries = []
-
-                for item in feed.entries[:MAX_ENTRIES_PER_SOURCE]:
-                    raw_date = (
-                        item.get("published")
-                        or item.get("updated")
-                        or ""
-                    )
-
-                    published = parse_date(raw_date)
-
-                    if not is_2026_report(published):
-                        continue
-
-                    entries.append({
-                        "title": item.get("title", "Untitled"),
-                        "link": item.get("link", ""),
-                        "description": (
-                            item.get("summary")
-                            or item.get("description")
-                            or ""
-                        ),
-                        "published": published
-                    })
-
             else:
                 print(
-                    f"[WARN] Unsupported source type: {source_type}",
+                    f"[WARN] Unsupported source type: {source_type}. "
+                    "Only 'ai_scrape' (ScrapeGraphAI) sources are supported.",
                     flush=True
                 )
                 continue
