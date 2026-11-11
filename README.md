@@ -37,7 +37,7 @@ flowchart LR
     G --> H[Flask website<br/>Latest · Archive]
 ```
 
-1. **Collection** – `collector.py` reads each enabled source in `sources.json`. Every source uses the `ai_scrape` type: [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai) (an LLM with a headless Chromium browser) reads the listing page, and every link and date it returns is then checked on the real article page. Any other type is skipped with a warning.
+1. **Collection** – `collector.py` reads each enabled source in `sources.json`. Two source types are supported, and both run the same per-article verification: `ai_scrape` ([ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai), an LLM with a headless Chromium browser, used by most sources) and `web_scrape` (plain Requests + BeautifulSoup, used by Libya Observer, whose site returns nothing to the headless browser on the server). Any other type is skipped with a warning.
 
    Scrapers respect each site's `robots.txt` and only follow links on the source's own domain.
 

@@ -79,8 +79,8 @@
     "url": "https://libyaobserver.ly/health",
     "homepage": "https://libyaobserver.ly/health",
     "region": "Libya",
-    "about": "Health news from Libya, including the National Centre for Disease Control (NCDC) and WHO Libya.",
-    "type": "ai_scrape",
+    "about": "Health news from Libya, including the National Centre for Disease Control (NCDC) and WHO Libya. Uses the plain scraper: the site returns nothing to ScrapeGraphAI's headless browser on the server.",
+    "type": "web_scrape",
     "enabled": true
   },
   {

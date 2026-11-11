@@ -461,6 +461,67 @@ def _check_ai_item(item, listing_url, source_host, text, listing_dates):
     }, ""
 
 
+def _verify_items(items, url, text, listing_dates, label):
+    """Dedup the candidate items, open them in parallel and keep verified ones."""
+    source_host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
+
+    # Drop duplicate links before opening any pages.
+    unique, seen = [], set()
+    for item in items:
+        key = canonical_url(urljoin(url, str(item.get("url") or "")))
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+
+    # Open the articles in parallel, but stop waiting for stalled servers.
+    pool = ThreadPoolExecutor(max_workers=4)
+    futures = [
+        pool.submit(_check_ai_item, item, url, source_host, text, listing_dates)
+        for item in unique[:MAX_ENTRIES_PER_SOURCE]
+    ]
+    done, not_done = wait(futures, timeout=AI_SOURCE_DEADLINE_SECONDS)
+    pool.shutdown(wait=False, cancel_futures=True)
+
+    results, stats = [], {}
+    if not_done:
+        stats["timed_out"] = len(not_done)
+    for future in done:
+        try:
+            result, reason = future.result()
+        except Exception:
+            result, reason = None, "error"
+        if result:
+            results.append(result)
+        else:
+            stats[reason] = stats.get(reason, 0) + 1
+
+    print(
+        f"[INFO] {label} found {len(items)} items; "
+        f"{len(results)} verified 2026 reports from {source_host}; "
+        f"skipped: {stats}",
+        flush=True,
+    )
+    return results
+
+
+def extract_web_scrape(source):
+    """Plain scraper: fetch the listing page with requests (no browser, no AI),
+    pull out the article links, then verify each one like any other source."""
+    url = source["url"]
+    if not allowed_by_robots(url):
+        raise requests.RequestException(f"Blocked by robots.txt: {url}")
+
+    response = requests.get(
+        url,
+        headers={"User-Agent": USER_AGENT},
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
+
+    items, listing_dates = _links_from_page(response.text, url)
+    return _verify_items(items, url, response.text, listing_dates, "Plain scraper")
+
+
 def extract_ai_scrape(source):
     """Use ScrapeGraphAI to read a listing page, then verify every link."""
     url = source["url"]
@@ -525,45 +586,7 @@ def extract_ai_scrape(source):
             flush=True,
         )
 
-    source_host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
-
-    # Drop duplicate links before opening any pages.
-    unique, seen = [], set()
-    for item in items:
-        key = canonical_url(urljoin(url, str(item.get("url") or "")))
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
-
-    # Open the articles in parallel, but stop waiting for stalled servers.
-    pool = ThreadPoolExecutor(max_workers=4)
-    futures = [
-        pool.submit(_check_ai_item, item, url, source_host, text, listing_dates)
-        for item in unique[:MAX_ENTRIES_PER_SOURCE]
-    ]
-    done, not_done = wait(futures, timeout=AI_SOURCE_DEADLINE_SECONDS)
-    pool.shutdown(wait=False, cancel_futures=True)
-
-    results, stats = [], {}
-    if not_done:
-        stats["timed_out"] = len(not_done)
-    for future in done:
-        try:
-            result, reason = future.result()
-        except Exception:
-            result, reason = None, "error"
-        if result:
-            results.append(result)
-        else:
-            stats[reason] = stats.get(reason, 0) + 1
-
-    print(
-        f"[INFO] ScrapeGraphAI found {len(items)} items; "
-        f"{len(results)} verified 2026 reports from {source_host}; "
-        f"skipped: {stats}",
-        flush=True,
-    )
-    return results
+    return _verify_items(items, url, text, listing_dates, "ScrapeGraphAI")
 
 
 def collect_once():
@@ -598,14 +621,20 @@ def collect_once():
 
         try:
             if source_type == "ai_scrape":
-                # Every source goes through ScrapeGraphAI (LLM-based), which
-                # reads the listing page; every link and date it returns is
-                # then verified on the real article page.
+                # ScrapeGraphAI (LLM + headless browser) reads the listing
+                # page; every link and date it returns is then verified on
+                # the real article page.
                 entries = extract_ai_scrape(source)
+            elif source_type == "web_scrape":
+                # Plain requests + BeautifulSoup, for sites where the
+                # headless browser is blocked or unnecessary. The same
+                # per-article verification still runs.
+                entries = extract_web_scrape(source)
             else:
                 print(
                     f"[WARN] Unsupported source type: {source_type}. "
-                    "Only 'ai_scrape' (ScrapeGraphAI) sources are supported.",
+                    "Supported types: 'ai_scrape' (ScrapeGraphAI) and "
+                    "'web_scrape' (plain requests).",
                     flush=True
                 )
                 continue
