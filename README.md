@@ -10,9 +10,9 @@ It is built for people who want one place to see what WHO, ECDC and similar bodi
 
 ## What it does
 
-- **Collects** reports on a schedule (every 30 minutes by default) from official sources. Every source (WHO Disease Outbreak News, ECDC Newsroom, ECDC weekly threats report, US CDC Travel Health Notices, UK Health Security Agency, Eurosurveillance, WHO AFRO) is read by [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai), and every link and date it returns is checked on the real page.
+- **Collects** reports on a schedule (every 30 minutes by default) from official sources and regional health news. Every source (WHO Disease Outbreak News, ECDC Newsroom, ECDC weekly threats report, US CDC Travel Health Notices, UK Health Security Agency, Eurosurveillance, WHO AFRO, Libya Observer Health, Daily News Egypt Health) is read by [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai), and every link and date it returns is checked on the real page.
 - **Verifies** every link before saving it: the page must actually load, and its publication date is cross-checked on the article page itself.
-- **Filters** to reports published in the current year (2026) and to outbreak-related content.
+- **Filters** to reports published in the current year (2026) and to outbreak and public-health content.
 - **Classifies** each report by category, disease/event, country/region and outbreak status, and writes a short neutral summary when AI is enabled.
 - **Removes duplicates** by URL and by near-identical titles.
 - **Displays** everything on two pages:
@@ -28,9 +28,9 @@ Every item shows its original source name and a link to the original report. The
 
 ```mermaid
 flowchart LR
-    A[Official sources<br/>read by ScrapeGraphAI<br/>WHO · ECDC · CDC · UKHSA · WHO AFRO] --> B[Collector<br/>collector.py]
+    A[Official sources<br/>read by ScrapeGraphAI<br/>WHO · ECDC · CDC · UKHSA · WHO AFRO<br/>Libya Observer · Daily News Egypt] --> B[Collector<br/>collector.py]
     B --> C[Verify link<br/>and publication date]
-    C --> D[Keep 2026 +<br/>outbreak-related only]
+    C --> D[Keep 2026 +<br/>health-related only]
     D --> E[Deduplicate<br/>URL + title similarity]
     E --> F[Classify & summarize<br/>ai_processor.py]
     F --> G[(SQLite database)]
@@ -44,7 +44,7 @@ flowchart LR
 2. **Verification** – Links are opened before saving. Broken pages, including "page not found" pages that still return HTTP 200, are skipped. When the article page shows its own publication date, that date is used instead of the feed's date.
 
 3. **Classification** – `ai_processor.py` sorts each report into one of:
-   *Outbreak investigation · Emerging public health threat · Official public health update · Research / surveillance · Not relevant.*
+   *Outbreak investigation · Emerging public health threat · Official public health update · Research / surveillance · Communicable Diseases · Covid-19 · Digital Health & AI · Emergency Response · Emerging and Re-emerging Diseases · Environmental Health · Health Collaboration · Maternal and Child Health · Mental Health · Non-communicable Diseases · Scientific Research · Zoonotic Diseases · Other · Not relevant.*
    - **With AI enabled:** an OpenAI model returns structured fields and a summary of up to 55 words. It is instructed to use only facts stated in the source and to write `Unknown` rather than guess.
    - **Without AI:** simple keyword rules decide relevance and pick out the country where possible. No summary is generated, so nothing is invented.
 
@@ -138,7 +138,7 @@ Edit `sources.json`:
 
 `loader_kwargs` is optional and is passed to ScrapeGraphAI's browser loader. Use `{"load_state": "networkidle"}` for pages that load their list of articles with JavaScript after the page opens (such as WHO Disease Outbreak News).
 
-`homepage`, `region` and `about` are optional notes for whoever maintains the list. Sources run in file order.
+`homepage`, `region` and `about` are optional notes for whoever maintains the list. `prompt_hint` is an optional extra instruction added to ScrapeGraphAI's prompt for that source, for example to ignore sidebars of unrelated news. Sources run in file order.
 
 Before adding a site, check its terms of use and `robots.txt`, and don't scrape sites that disallow automated access.
 

@@ -34,11 +34,19 @@ USER_AGENT = (
 )
 
 OUTBREAK_KEYWORDS = (
+    # Outbreaks and communicable disease
     "outbreak", "ebola", "mpox", "cholera", "yellow fever",
     "measles", "polio", "marburg", "epidemic", "influenza",
     "disease", "emergency", "public health", "health threat",
     "meningitis", "dengue", "plague", "situation report",
-    "health emergency", "avian influenza", "hepatitis"
+    "health emergency", "avian influenza", "hepatitis",
+    "covid", "coronavirus", "pandemic", "virus", "infection",
+    "tuberculosis", "malaria", "vaccine", "vaccination", "zoonotic",
+    # Wider public health (for the new categories)
+    "health", "hospital", "patient", "medical", "medicine",
+    "cancer", "diabetes", "cardiac", "heart", "mental",
+    "maternal", "malnutrition", "nutrition",
+    "pollution", "sanitation",
 )
 
 
@@ -51,7 +59,7 @@ def canonical_url(url):
     return urlunsplit((
         parts.scheme.lower(),
         parts.netloc.lower(),
-        parts.path.rstrip("/"),
+        parts.path,  # keep any trailing slash: some sites redirect slowly without it
         "",
         ""
     ))
@@ -475,8 +483,9 @@ def extract_ai_scrape(source):
             "topic lists, filters, language links and footer links. For each, "
             "give the title, the link exactly as shown, and the published "
             "date in YYYY-MM-DD if it is shown, otherwise null. Include items "
-            "even when the date is missing."
-        ),
+            "even when the date is missing. "
+            + (source.get("prompt_hint") or "")
+        ).strip(),
         source=url,
         schema=_make_article_schema(),
         config={

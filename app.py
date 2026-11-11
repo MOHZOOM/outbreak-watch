@@ -113,8 +113,23 @@ def site_stats():
     }
 
 CATEGORIES = [
-    "Outbreak investigation", "Emerging public health threat",
-    "Official public health update", "Research / surveillance",
+    "Outbreak investigation",
+    "Emerging public health threat",
+    "Official public health update",
+    "Research / surveillance",
+    "Communicable Diseases",
+    "Covid-19",
+    "Digital Health & AI",
+    "Emergency Response",
+    "Emerging and Re-emerging Diseases",
+    "Environmental Health",
+    "Health Collaboration",
+    "Maternal and Child Health",
+    "Mental Health",
+    "Non-communicable Diseases",
+    "Scientific Research",
+    "Zoonotic Diseases",
+    "Other",
 ]
 
 @app.template_filter("ago")

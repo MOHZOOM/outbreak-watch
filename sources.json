@@ -73,5 +73,24 @@
     "about": "Outbreak and emergency updates from the WHO Regional Office for Africa.",
     "type": "ai_scrape",
     "enabled": true
+  },
+  {
+    "name": "Libya Observer Health",
+    "url": "https://libyaobserver.ly/health",
+    "homepage": "https://libyaobserver.ly/health",
+    "region": "Libya",
+    "about": "Health news from Libya, including the National Centre for Disease Control (NCDC) and WHO Libya.",
+    "type": "ai_scrape",
+    "enabled": true
+  },
+  {
+    "name": "Daily News Egypt Health",
+    "url": "https://dailynewsegypt.com/category/health/",
+    "homepage": "https://dailynewsegypt.com/category/health/",
+    "region": "Egypt",
+    "about": "Health news from Egypt's Ministry of Health and regional partners.",
+    "type": "ai_scrape",
+    "prompt_hint": "Only include articles from the page's main Health category list. Ignore 'latest news', 'most read', sidebar and footer lists, which contain business, politics and culture stories.",
+    "enabled": true
   }
 ]

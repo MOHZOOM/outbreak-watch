@@ -5,7 +5,7 @@
   --line:#dde7e6;--line-soft:#edf2f1;
   --brand:#0f766e;--brand-strong:#0b5a54;--brand-soft:#e3f2ef;
   --hero-1:#0b3b3c;--hero-2:#0f5c58;
-  --c-outbreak:#c2410c;--c-threat:#b45309;--c-update:#0e7490;--c-research:#6d28d9;--c-other:#64748b;
+  --c-outbreak:#c2410c;--c-threat:#b45309;--c-update:#0e7490;--c-research:#6d28d9;--c-other:#64748b;--c-response:#be123c;--c-digital:#1d4ed8;--c-env:#15803d;--c-care:#a21caf;
   --shadow:0 1px 2px rgb(19 42 50 / .04),0 4px 14px rgb(19 42 50 / .05);
   --shadow-hover:0 2px 4px rgb(19 42 50 / .06),0 12px 28px rgb(19 42 50 / .10);
   --radius:14px;--wrap:1180px;
@@ -15,7 +15,7 @@
   --line:#22353a;--line-soft:#1b2b2f;
   --brand:#2dd4bf;--brand-strong:#5eead4;--brand-soft:#123532;
   --hero-1:#0a2526;--hero-2:#0d3a38;
-  --c-outbreak:#fb923c;--c-threat:#fbbf24;--c-update:#38bdf8;--c-research:#a78bfa;--c-other:#94a3b8;
+  --c-outbreak:#fb923c;--c-threat:#fbbf24;--c-update:#38bdf8;--c-research:#a78bfa;--c-other:#94a3b8;--c-response:#fb7185;--c-digital:#60a5fa;--c-env:#4ade80;--c-care:#e879f9;
   --shadow:0 1px 2px rgb(0 0 0 / .3);--shadow-hover:0 10px 26px rgb(0 0 0 / .45);
 }}
 
@@ -77,6 +77,19 @@ main{max-width:var(--wrap);margin:auto;padding:28px 24px 64px}
 .cat-emerging-public-health-threat{--cat:var(--c-threat)}
 .cat-official-public-health-update{--cat:var(--c-update)}
 .cat-research---surveillance{--cat:var(--c-research)}
+.cat-communicable-diseases{--cat:var(--c-outbreak)}
+.cat-covid-19{--cat:var(--c-outbreak)}
+.cat-emerging-and-re-emerging-diseases{--cat:var(--c-threat)}
+.cat-zoonotic-diseases{--cat:var(--c-threat)}
+.cat-emergency-response{--cat:var(--c-response)}
+.cat-health-collaboration{--cat:var(--c-update)}
+.cat-digital-health---ai{--cat:var(--c-digital)}
+.cat-environmental-health{--cat:var(--c-env)}
+.cat-maternal-and-child-health{--cat:var(--c-care)}
+.cat-mental-health{--cat:var(--c-care)}
+.cat-non-communicable-diseases{--cat:var(--c-care)}
+.cat-scientific-research{--cat:var(--c-research)}
+.cat-other{--cat:var(--c-other)}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 30px}
 .chip{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:13px;font-weight:500;text-decoration:none}
